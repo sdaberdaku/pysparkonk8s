@@ -77,6 +77,19 @@ class RunIdentity:
     run_id: str
     map_index: int | None = None
 
+    @classmethod
+    def from_context(cls, context: Mapping) -> RunIdentity:
+        """Build the identity from an Airflow task context, applying KubernetesExecutor's label sanitising."""
+        from airflow.providers.cncf.kubernetes.pod_generator import make_safe_label_value
+
+        map_index = context["ti"].map_index
+        return cls(
+            dag_id=make_safe_label_value(context["dag"].dag_id),
+            task_id=make_safe_label_value(context["task"].task_id),
+            run_id=make_safe_label_value(context["run_id"]),
+            map_index=None if map_index is None or map_index < 0 else map_index,
+        )
+
     def labels(self) -> dict[str, str]:
         """The labels KubernetesExecutor stamps on the worker pod (the Spark driver)."""
         labels = {"dag_id": self.dag_id, "task_id": self.task_id, "run_id": self.run_id}
