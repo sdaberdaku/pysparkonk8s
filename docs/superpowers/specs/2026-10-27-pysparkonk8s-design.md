@@ -174,8 +174,8 @@ def job(spark):
     spark.range(10**6).count()
 
 job.override(**pyspark_on_k8s(
-    driver=SparkDriverConf(image="ghcr.io/me/airflow-spark:3.1.0", cores=CPU.cores(2), memory=Memory.gibibytes(4)),
-    executor=SparkExecutorConf(image="spark:4.1.0-python3", cores=CPU.cores(4), memory=Memory.gibibytes(8), max_executors=10),
+    driver_conf=SparkDriverConf(image="ghcr.io/me/airflow-spark:3.1.0", cores=CPU.cores(2), memory=Memory.gibibytes(4)),
+    executor_conf=SparkExecutorConf(image="spark:4.1.0-python3", cores=CPU.cores(4), memory=Memory.gibibytes(8), max_executors=10),
     extra={"spark.sql.shuffle.partitions": "200"},
     executor_name="KubernetesExecutor",   # optional, for multi-executor deployments
 ))
@@ -188,15 +188,18 @@ helper sets `conn_id=None` explicitly to override a decorator default).
 ### Entry point 2: decorator and operator
 
 ```python
-@task.pyspark_on_k8s(driver=SparkDriverConf(...), executor=SparkExecutorConf(...))
+@task.pyspark_on_k8s(driver_conf=SparkDriverConf(...), executor_conf=SparkExecutorConf(...))
 def job(spark): ...
 ```
 
-`PySparkOnK8sOperator(PySparkOperator)` takes `base`, `driver`, `executor`, `extra`; sets `executor_config`
+The kwargs are named `driver_conf`, `executor_conf`, `base_conf` on both entry points: `executor` is Airflow's own
+per-task argument (the executor name), and `BaseOperator` would overwrite it. `PySparkOnK8sOperator(PySparkOperator)`
+takes `base_conf`, `driver_conf`, `executor_conf`, `extra`; sets `executor_config`
 in `__init__` (merging with any user-given `executor_config`) and `config_kwargs` from `build_spark_conf`.
 `_PySparkOnK8sDecoratedOperator(DecoratedOperator, PySparkOnK8sOperator)` mirrors upstream's decorator class.
 Provider entrypoint `apache_airflow_provider` exposes `get_provider_info()` with the task decorator named
-`pyspark_on_k8s`. The three conf fields are `template_fields` so Jinja works inside them.
+`pyspark_on_k8s`. The conf objects are not template fields (see Templating above); `PySparkOnK8sOperator` is exported lazily from the
+package so `import pysparkonk8s` stays free of Airflow imports.
 
 ### RBAC
 
@@ -240,6 +243,8 @@ appeared and are gone afterwards. Spark 4.x only.
 ### CI, release, protection
 
 - `ci.yml`: on pull requests (skipped for drafts) and on push to `main`: ruff, unit matrix, e2e, final `ci-ok` job.
+- Renovate (Mend app) keeps Python dependencies, the driver image inputs (`docker/images.json`), the e2e Helm chart
+  version and action majors current; patch-level and action updates automerge after `ci-ok`.
 - `release.yml`: on tag `v*`: build sdist and wheel, publish to PyPI with trusted publishing (OIDC, no token),
   push the OCI chart, build and push the driver images (amd64 and arm64, from the wheel built in the same run),
   `gh release create` with generated notes. First push creates private GHCR packages; they are set to public

@@ -919,3 +919,19 @@ gh pr merge --rebase
 ```
 
 - [ ] **Step 4: Report** the merge SHA, the Pages URL once `pages.yml` ran, and the two manual steps (PyPI trusted publisher, `pypi` environment) that must precede `git tag v1.0.0 && git push --tags`. After 1.0.0 is on PyPI (owner's step): archive `sdaberdaku/apache-airflow-providers-pysparkonk8s` with a README pointer to the new repo.
+
+---
+
+### Task 16: Renovate configuration
+
+**Files:**
+- Create: `renovate.json`
+- Modify: `docs/site/development.md` (one paragraph), `README.md` (nothing)
+
+**Interfaces:**
+- `renovate.json` (schema `https://docs.renovatebot.com/renovate-schema.json`): `extends: ["config:recommended", ":dependencyDashboard"]`; `enabledManagers: ["pep621", "dockerfile", "github-actions", "custom.regex"]` plus `lockFileMaintenance: {enabled: true, schedule: ["before 6am on monday"]}` so `uv.lock` is refreshed; custom regex managers: (a) `docker/images.json` `"airflow": "(?<currentValue>[^"]+)"` → datasource `docker`, depName `apache/airflow`, versioning `docker`; (b) same file `"pyspark": "(?<currentValue>[^"]+)"` → datasource `pypi`, depName `pyspark`; (c) `e2e/run.sh` (or wherever the chart version literal lives) `--version (?<currentValue>[0-9.]+)` → datasource `helm`, depName `airflow`, registryUrl `https://airflow.apache.org`; (d) `e2e/run.sh` executor image literal `spark:(?<currentValue>[0-9.]+)-python3` → datasource `docker`, depName `spark`; `packageRules`: `{matchUpdateTypes: ["patch", "pin", "digest"], automerge: true}`, `{matchManagers: ["github-actions"], automerge: true}`, `{matchDepNames: ["apache/airflow"], matchUpdateTypes: ["major"], enabled: false}` (Airflow majors are a code decision), `{matchPackageNames: ["apache-airflow"], matchUpdateTypes: ["major"], enabled: false}`; `platformAutomerge: true`; `schedule: ["before 6am on monday"]`; `prConcurrentLimit: 4`; `labels: ["dependencies"]`.
+- development.md paragraph: Renovate opens the update PRs; patch and action updates merge on their own once CI passes; the Mend Renovate app must be installed on the repository for the config to act.
+
+- [ ] **Step 1: Write and validate** (`npx --yes renovate-config-validator renovate.json`, or the `renovate/renovate` container)
+- [ ] **Step 2: Commit `ci: Renovate configuration`, push, PR, `ci-ok`, squash-merge**
+- [ ] **Step 3: Report** the merge commit.
