@@ -3,6 +3,7 @@ import tempfile
 
 os.environ["AIRFLOW_HOME"] = tempfile.mkdtemp(prefix="airflow_home_")
 os.environ["AIRFLOW__CORE__UNIT_TEST_MODE"] = "True"
+os.environ.setdefault("AIRFLOW__CORE__LOAD_EXAMPLES", "False")
 
 import pytest  # noqa: E402
 

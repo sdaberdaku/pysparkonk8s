@@ -1,6 +1,5 @@
 import os
-
-import pendulum
+from datetime import datetime, timezone
 
 try:
     from airflow.sdk import dag, task
@@ -20,7 +19,7 @@ executor_conf = SparkExecutorConf(
 
 @dag(
     dag_id="pysparkonk8s_decorator",
-    start_date=pendulum.datetime(2025, 1, 1),
+    start_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     schedule=None,
     catchup=False,
     tags=["pysparkonk8s"],

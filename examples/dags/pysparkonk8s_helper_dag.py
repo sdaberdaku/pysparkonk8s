@@ -1,6 +1,5 @@
 import os
-
-import pendulum
+from datetime import datetime, timezone
 
 try:
     from airflow.sdk import dag, task
@@ -20,13 +19,13 @@ executor_conf = SparkExecutorConf(
 
 @dag(
     dag_id="pysparkonk8s_helper",
-    start_date=pendulum.datetime(2025, 1, 1),
+    start_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     schedule=None,
     catchup=False,
     tags=["pysparkonk8s"],
 )
 def pysparkonk8s_helper():
-    @task.pyspark(task_id="sum_ids")
+    @task.pyspark
     def sum_ids(spark=None):
         return spark.range(1000).selectExpr("sum(id)").collect()[0][0]
 
