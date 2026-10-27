@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from airflow.providers.cncf.kubernetes.pod_generator import PodGenerator
-
 from airflow.providers.apache.spark.operators.spark_pyspark import PySparkOperator
+from airflow.providers.cncf.kubernetes.pod_generator import PodGenerator
 
 from pysparkonk8s.conf import (
     COMPONENT_LABEL,
