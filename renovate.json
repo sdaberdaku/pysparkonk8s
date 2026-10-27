@@ -5,6 +5,7 @@
   "schedule": ["before 6am on monday"],
   "lockFileMaintenance": {"enabled": true, "automerge": true},
   "platformAutomerge": true,
+  "rangeStrategy": "update-lockfile",
   "prConcurrentLimit": 4,
   "labels": ["dependencies"],
   "customManagers": [

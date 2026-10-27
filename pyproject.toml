@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,14 +7,18 @@ name = "airflow-provider-pysparkonk8s"
 dynamic = ["version"]
 description = "Airflow provider that runs @task.pyspark tasks as client-mode Spark drivers on Kubernetes"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 requires-python = ">=3.10,<3.15"
 authors = [{ name = "Sebastian Daberdaku" }]
 classifiers = [
     "Framework :: Apache Airflow",
     "Framework :: Apache Airflow :: Provider",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "apache-airflow>=2.11",
@@ -37,6 +41,9 @@ dev = ["pytest>=8", "ruff>=0.14", "pytest-mock>=3"]
 
 [tool.hatch.version]
 path = "src/pysparkonk8s/provider_info.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/README.md", "/LICENSE", "/CHANGELOG.md", "/pyproject.toml"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pysparkonk8s"]

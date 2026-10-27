@@ -6,6 +6,7 @@ ARG PYSPARK_VERSION=4.2.0
 
 FROM apache/airflow:${AIRFLOW_VERSION}-python${PYTHON_VERSION}
 ARG PYSPARK_VERSION
+ARG AIRFLOW_VERSION
 
 LABEL org.opencontainers.image.source=https://github.com/sdaberdaku/pysparkonk8s \
       org.opencontainers.image.licenses=Apache-2.0
@@ -20,6 +21,9 @@ ENV PATH=$JAVA_HOME/bin:$PATH
 
 USER airflow
 COPY --chown=airflow:0 dist/*.whl /tmp/wheels/
-RUN pip install --no-cache-dir "pyspark==${PYSPARK_VERSION}" /tmp/wheels/*.whl \
+# pyspark-client must match pyspark: Spark Connect-aware code paths import it, and a skewed pair breaks at runtime.
+# The apache-airflow pin keeps pip from moving Airflow while it resolves the wheel's requirements.
+RUN pip install --no-cache-dir "pyspark==${PYSPARK_VERSION}" "pyspark-client==${PYSPARK_VERSION}" \
+        "apache-airflow==${AIRFLOW_VERSION}" /tmp/wheels/*.whl \
     && pip check \
     && rm -rf /tmp/wheels

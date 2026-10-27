@@ -80,7 +80,14 @@ echo "== build wheel and images (python $PYTHON_VERSION)"
 cd "$ROOT"
 rm -rf dist
 uv build --wheel
-docker build -f docker/driver.Dockerfile --build-arg "PYTHON_VERSION=$PYTHON_VERSION" -t pysparkonk8s-driver:base .
+# The Airflow and PySpark versions of this Python row come from docker/images.json, the release matrix.
+ROW=$(jq -c --arg py "$PYTHON_VERSION" 'map(select(.python == $py)) | first // empty' docker/images.json)
+[[ -n "$ROW" ]] || { echo "no row for python $PYTHON_VERSION in docker/images.json" >&2; exit 1; }
+docker build -f docker/driver.Dockerfile \
+  --build-arg "PYTHON_VERSION=$PYTHON_VERSION" \
+  --build-arg "AIRFLOW_VERSION=$(jq -r .airflow <<<"$ROW")" \
+  --build-arg "PYSPARK_VERSION=$(jq -r .pyspark <<<"$ROW")" \
+  -t pysparkonk8s-driver:base .
 docker build -t pysparkonk8s-driver:e2e -f - . <<'DOCKERFILE'
 FROM pysparkonk8s-driver:base
 COPY examples/dags /opt/airflow/dags
