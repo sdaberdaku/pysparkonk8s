@@ -3,7 +3,7 @@
   "extends": ["config:recommended", ":dependencyDashboard"],
   "enabledManagers": ["pep621", "dockerfile", "github-actions", "custom.regex"],
   "schedule": ["before 6am on monday"],
-  "lockFileMaintenance": {"enabled": true, "schedule": ["before 6am on monday"]},
+  "lockFileMaintenance": {"enabled": true, "automerge": true},
   "platformAutomerge": true,
   "prConcurrentLimit": 4,
   "labels": ["dependencies"],
