@@ -1,0 +1,5 @@
+[
+  {"airflow": "3.3.2", "python": "3.10", "pyspark": "4.2.0", "latest": true},
+  {"airflow": "3.3.2", "python": "3.12", "pyspark": "4.2.0"},
+  {"airflow": "3.3.2", "python": "3.14", "pyspark": "4.2.0"}
+]

@@ -67,17 +67,18 @@ jobs:
     name: test (airflow ${{ matrix.airflow }}, python ${{ matrix.python }})
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.2
-        with:
-          enable-cache: true
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
       - run: uv sync --python ${{ matrix.python }}
       # The lock holds Airflow 3; drop it first so no airflow-core/task-sdk files linger under a 2.x row.
       - run: |
           uv pip uninstall apache-airflow apache-airflow-core apache-airflow-task-sdk
           uv pip install "apache-airflow==${{ matrix.airflow }}"
+          uv pip check
       - run: uv run --no-sync pytest -q
 
   docs:
@@ -89,8 +90,33 @@ jobs:
   e2e:
     needs: plan
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.10"
+            executor: spark:4.2.0-python3
+          - python: "3.14"
+            executor: ghcr.io/sdaberdaku/spark:4.2.0-python3.14
+    name: e2e (python ${{ matrix.python }})
     steps:
-      - run: "true" # replaced by the kind-based end-to-end test
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - run: helm repo add apache-airflow https://airflow.apache.org
+      - env:
+          PYTHON_VERSION: ${{ matrix.python }}
+          EXECUTOR_IMAGE: ${{ matrix.executor }}
+        run: bash e2e/run.sh
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-dump-python${{ matrix.python }}
+          path: e2e/out
+          if-no-files-found: ignore
 
   ci-ok:
     needs: [lint, test, docs, e2e]

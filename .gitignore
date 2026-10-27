@@ -10,3 +10,5 @@ dist/
 .idea/
 site/
 airflow_home/
+e2e/out/
+images.tar

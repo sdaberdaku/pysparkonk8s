@@ -1,0 +1,59 @@
+# Small Airflow 3 install for the kind end-to-end test (chart apache-airflow/airflow 1.22.0).
+# run.sh sets env[1].value (EXECUTOR_IMAGE) and the matching worker variable with --set.
+executor: KubernetesExecutor
+airflowVersion: 3.3.2
+defaultAirflowRepository: pysparkonk8s-driver
+defaultAirflowTag: e2e
+images:
+  airflow:
+    pullPolicy: Never
+dags:
+  persistence:
+    enabled: false
+  gitSync:
+    enabled: false
+env:
+  - name: DRIVER_IMAGE
+    value: pysparkonk8s-driver:e2e
+  - name: EXECUTOR_IMAGE
+    value: spark:4.2.0-python3
+config:
+  core:
+    load_examples: "False"
+  kubernetes_executor:
+    delete_worker_pods: "True"
+    delete_worker_pods_on_failure: "False"
+  kubernetes_environment_variables:
+    DRIVER_IMAGE: pysparkonk8s-driver:e2e
+    EXECUTOR_IMAGE: spark:4.2.0-python3
+workers:
+  celery:
+    replicas: 0
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+scheduler:
+  replicas: 1
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+apiServer:
+  replicas: 1
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+dagProcessor:
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+triggerer:
+  enabled: false
+statsd:
+  enabled: false
+pgbouncer:
+  enabled: false
+flower:
+  enabled: false
+redis:
+  enabled: false
+# Plain Jobs instead of Helm hooks, so `helm --wait` does not wait for hooks that run after it.
+migrateDatabaseJob:
+  useHelmHooks: false
+createUserJob:
+  useHelmHooks: false
