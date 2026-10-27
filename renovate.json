@@ -1,0 +1,65 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "enabledManagers": ["pep621", "dockerfile", "github-actions", "custom.regex"],
+  "schedule": ["before 6am on monday"],
+  "lockFileMaintenance": {"enabled": true, "automerge": true},
+  "platformAutomerge": true,
+  "rangeStrategy": "update-lockfile",
+  "prConcurrentLimit": 4,
+  "labels": ["dependencies"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Airflow image tag in the driver image matrix",
+      "managerFilePatterns": ["/^docker/images\\.json$/"],
+      "matchStrings": ["\"airflow\": \"(?<currentValue>[^\"]+)\""],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "apache/airflow",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "PySpark version in the driver image matrix",
+      "managerFilePatterns": ["/^docker/images\\.json$/"],
+      "matchStrings": ["\"pyspark\": \"(?<currentValue>[^\"]+)\""],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "pyspark"
+    },
+    {
+      "customType": "regex",
+      "description": "Airflow Helm chart used by the e2e test",
+      "managerFilePatterns": ["/^e2e/run\\.sh$/", "/^e2e/values\\.yaml$/"],
+      "matchStrings": ["--version (?<currentValue>[0-9.]+)", "chart apache-airflow/airflow (?<currentValue>[0-9.]+)"],
+      "datasourceTemplate": "helm",
+      "depNameTemplate": "airflow",
+      "registryUrlTemplate": "https://airflow.apache.org"
+    },
+    {
+      "customType": "regex",
+      "description": "Stock Spark executor image (Docker Hub)",
+      "managerFilePatterns": ["/^e2e/run\\.sh$/", "/^e2e/values\\.yaml$/", "/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["(?:^|[\\s\"'-])spark:(?<currentValue>[0-9.]+-python3)(?:[\\s\"'}]|$)"],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "spark",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<compatibility>python.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Spark executor image with Python 3.14 (GHCR)",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["ghcr\\.io/sdaberdaku/spark:(?<currentValue>[0-9.]+-python3\\.[0-9]+)"],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "ghcr.io/sdaberdaku/spark",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<compatibility>python.+)$"
+    }
+  ],
+  "packageRules": [
+    {"matchUpdateTypes": ["patch", "pin", "digest"], "automerge": true},
+    {"matchManagers": ["github-actions"], "automerge": true},
+    {"matchDepNames": ["apache/airflow"], "matchUpdateTypes": ["major"], "enabled": false},
+    {"matchPackageNames": ["apache-airflow"], "matchUpdateTypes": ["major"], "enabled": false},
+    {"matchManagers": ["dockerfile"], "matchDepNames": ["apache/airflow"], "enabled": false},
+    {"matchDepNames": ["spark", "ghcr.io/sdaberdaku/spark"], "matchUpdateTypes": ["major", "minor"], "enabled": false}
+  ]
+}

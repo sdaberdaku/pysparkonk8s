@@ -1,0 +1,15 @@
+apiVersion: v2
+name: pysparkonk8s-rbac
+description: Role and RoleBinding that let an Airflow worker pod act as a client-mode Spark driver
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+home: https://sdaberdaku.github.io/pysparkonk8s/
+sources:
+  - https://github.com/sdaberdaku/pysparkonk8s
+maintainers:
+  - name: Sebastian Daberdaku
+keywords:
+  - airflow
+  - spark
+  - kubernetes

@@ -1,0 +1,38 @@
+site_name: pysparkonk8s
+site_description: Ephemeral Spark clusters for @task.pyspark on Kubernetes
+site_url: https://sdaberdaku.github.io/pysparkonk8s/
+repo_url: https://github.com/sdaberdaku/pysparkonk8s
+edit_uri: edit/main/docs/site/
+docs_dir: docs/site
+exclude_docs: requirements.txt
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - content.action.edit
+plugins:
+  - search
+markdown_extensions:
+  - attr_list
+nav:
+  - Home: index.md
+  - Quick start: quickstart.md
+  - Configuration: configuration.md
+  - Examples: examples.md
+  - How it works: how-it-works.md
+  - Operations: operations.md
+  - Limitations: limitations.md
+  - Development: development.md
+  - Release: release.md
+  - Changelog: changelog.md

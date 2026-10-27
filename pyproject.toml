@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "airflow-provider-pysparkonk8s"
+dynamic = ["version"]
+description = "Airflow provider that runs @task.pyspark tasks as client-mode Spark drivers on Kubernetes"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10,<3.15"
+authors = [{ name = "Sebastian Daberdaku" }]
+classifiers = [
+    "Framework :: Apache Airflow",
+    "Framework :: Apache Airflow :: Provider",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "apache-airflow>=2.11",
+    "apache-airflow-providers-apache-spark>=6.3",
+    "apache-airflow-providers-cncf-kubernetes>=10",
+    "pyspark>=4.0",
+    "pyyaml>=6",
+]
+
+[project.urls]
+Homepage = "https://sdaberdaku.github.io/pysparkonk8s/"
+Source = "https://github.com/sdaberdaku/pysparkonk8s"
+Changelog = "https://github.com/sdaberdaku/pysparkonk8s/blob/main/CHANGELOG.md"
+
+[project.entry-points.apache_airflow_provider]
+provider_info = "pysparkonk8s.provider_info:get_provider_info"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.14", "pytest-mock>=3"]
+
+[tool.hatch.version]
+path = "src/pysparkonk8s/provider_info.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/README.md", "/LICENSE", "/CHANGELOG.md", "/pyproject.toml"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pysparkonk8s"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

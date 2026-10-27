@@ -1,0 +1,15 @@
+.superpowers/
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.idea/
+/site/
+airflow_home/
+e2e/out/
+images.tar
+docs/site/changelog.md
