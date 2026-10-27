@@ -18,6 +18,7 @@ API=http://localhost:8080
 KUBECTL=(kubectl --context "kind-$CLUSTER" -n "$NS")
 PF_PID=""
 TOKEN=""
+DUMPED=""
 
 cleanup() {
   [[ -n "$PF_PID" ]] && kill "$PF_PID" 2>/dev/null || true
@@ -25,13 +26,21 @@ cleanup() {
     kind delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true
   fi
 }
-trap cleanup EXIT
+# Any non-zero exit that has not dumped yet (failed helm, port-forward, set -e) dumps first, then cleans up.
+on_exit() {
+  local rc=$?
+  if [[ $rc -ne 0 && -z "$DUMPED" ]]; then dump || true; fi
+  cleanup
+  exit $rc
+}
+trap on_exit EXIT
 
 api() { # api METHOD PATH [JSON]
   curl -fsS -X "$1" "$API$2" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' ${3:+-d "$3"}
 }
 
 dump() {
+  DUMPED=1
   echo "::group::cluster dump" >&2
   mkdir -p "$ARTIFACT_DIR"
   kubectl --context "kind-$CLUSTER" get pods -A -o wide | tee "$ARTIFACT_DIR/pods.txt" >&2 || true
@@ -98,12 +107,15 @@ helm upgrade --install airflow apache-airflow/airflow --version 1.22.0 -n "$NS" 
   -f e2e/values.yaml \
   --set "env[1].value=$EXECUTOR_IMAGE" \
   --set "config.kubernetes_environment_variables.EXECUTOR_IMAGE=$EXECUTOR_IMAGE" \
-  --wait --timeout 10m || { dump; exit 1; }
-helm upgrade --install pysparkonk8s-rbac charts/pysparkonk8s-rbac -n "$NS" --set serviceAccountName=airflow-worker
+  --wait --timeout 10m
+helm upgrade --install pysparkonk8s-rbac charts/pysparkonk8s-rbac -n "$NS" --set serviceAccountName=airflow-worker || fail "RBAC chart install"
 
 echo "== port-forward and token"
 "${KUBECTL[@]}" port-forward svc/airflow-api-server 8080:8080 >/dev/null 2>&1 &
 PF_PID=$!
+sleep 2
+kill -0 "$PF_PID" 2>/dev/null || fail "port-forward to airflow-api-server did not start"
+# admin/admin is the chart's default user.
 for _ in $(seq 60); do
   TOKEN=$(curl -fsS -X POST "$API/auth/token" -H 'Content-Type: application/json' \
     -d '{"username":"admin","password":"admin"}' 2>/dev/null | jq -r .access_token) && [[ -n "$TOKEN" && "$TOKEN" != null ]] && break

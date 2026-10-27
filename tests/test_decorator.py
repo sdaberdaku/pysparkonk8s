@@ -23,14 +23,25 @@ def test_task_pyspark_on_k8s(task):
     assert op.config_kwargs["spark.kubernetes.executor.container.image"] == "e"
 
 
-def test_decorator_kwargs_carry_pod_override_for_mapped_tasks():
-    from pysparkonk8s import CPU, Memory, SparkDriverConf, SparkExecutorConf
-    from pysparkonk8s.decorators import pyspark_on_k8s_task
+def test_mapped_task_carries_pod_override(task):
+    from airflow.providers.common.compat.sdk import DAG
 
-    @pyspark_on_k8s_task(
-        driver_conf=SparkDriverConf(image="d", cores=CPU.cores(1), memory=Memory.mebibytes(512)),
-        executor_conf=SparkExecutorConf(image="e", cores=CPU.cores(1), memory=Memory.mebibytes(512), max_executors=1),
-    )
-    def f(spark=None): ...
+    @task.pyspark_on_k8s(driver_conf=SparkDriverConf(image="d"), executor_conf=SparkExecutorConf(image="e"))
+    def job(n, spark):
+        return n
 
-    assert f.kwargs["executor_config"]["pod_override"].spec.containers[0].image == "d"
+    with DAG("m", start_date=pendulum.datetime(2025, 1, 1)):
+        mapped = job.expand(n=[1, 2]).operator
+    assert mapped.partial_kwargs["executor_config"]["pod_override"].spec.containers[0].image == "d"
+
+
+def test_override_driver_conf_replaces_prefilled_pod_override(task):
+    from airflow.providers.common.compat.sdk import DAG
+
+    @task.pyspark_on_k8s(driver_conf=SparkDriverConf(image="d"), executor_conf=SparkExecutorConf(image="e"))
+    def job(spark):
+        return spark
+
+    with DAG("o", start_date=pendulum.datetime(2025, 1, 1)):
+        op = job.override(driver_conf=SparkDriverConf(image="other"))().operator
+    assert op.executor_config["pod_override"].spec.containers[0].image == "other"

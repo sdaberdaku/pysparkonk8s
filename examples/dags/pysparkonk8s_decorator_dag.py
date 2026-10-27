@@ -11,6 +11,7 @@ from pysparkonk8s import CPU, Memory, SparkDriverConf, SparkExecutorConf
 DRIVER_IMAGE = os.environ.get("DRIVER_IMAGE", "pysparkonk8s-driver:e2e")
 EXECUTOR_IMAGE = os.environ.get("EXECUTOR_IMAGE", "spark:4.2.0-python3")
 
+# 250m CPU requests (and max_active_tis_per_dag=1 in the mapped DAG) let the e2e fit a 2 vCPU CI runner.
 driver_conf = SparkDriverConf(
     image=DRIVER_IMAGE, cores=CPU.cores(1), request_cpu=CPU.milli_cores(250), memory=Memory.mebibytes(1024)
 )

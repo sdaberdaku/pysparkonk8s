@@ -19,5 +19,7 @@ ENV JAVA_HOME=/opt/java
 ENV PATH=$JAVA_HOME/bin:$PATH
 
 USER airflow
-COPY dist/*.whl /tmp/wheels/
-RUN pip install --no-cache-dir "pyspark==${PYSPARK_VERSION}" /tmp/wheels/*.whl
+COPY --chown=airflow:0 dist/*.whl /tmp/wheels/
+RUN pip install --no-cache-dir "pyspark==${PYSPARK_VERSION}" /tmp/wheels/*.whl \
+    && pip check \
+    && rm -rf /tmp/wheels

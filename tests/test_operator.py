@@ -31,6 +31,20 @@ def test_operator_rejects_user_pod_override():
         )
 
 
+def test_operator_rejects_pod_override_without_component_label():
+    from kubernetes.client import models as k8s
+
+    pod = k8s.V1Pod(metadata=k8s.V1ObjectMeta(labels={"a": "b"}))
+    with pytest.raises(ValueError, match="pod_override"):
+        PySparkOnK8sOperator(
+            task_id="t",
+            python_callable=lambda spark: 1,
+            driver_conf=SparkDriverConf(image="d"),
+            executor_conf=SparkExecutorConf(image="e"),
+            executor_config={"pod_override": pod},
+        )
+
+
 def test_operator_execute_writes_template_then_runs(tmp_path, monkeypatch, mocker):
     for n, v in {"SPARK_DRIVER_POD_NAME": "p", "SPARK_LOCAL_IP": "ip", "SPARK_DRIVER_NAMESPACE": "ns"}.items():
         monkeypatch.setenv(n, v)

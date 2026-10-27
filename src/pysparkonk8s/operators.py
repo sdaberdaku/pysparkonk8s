@@ -7,8 +7,20 @@ from typing import Any
 
 from airflow.providers.apache.spark.operators.spark_pyspark import PySparkOperator
 
-from pysparkonk8s.conf import SparkBaseConf, SparkDriverConf, SparkExecutorConf, build_spark_conf
+from pysparkonk8s.conf import (
+    COMPONENT_LABEL,
+    DRIVER_COMPONENT,
+    SparkBaseConf,
+    SparkDriverConf,
+    SparkExecutorConf,
+    build_spark_conf,
+)
 from pysparkonk8s.template import prepare_driver
+
+
+def _is_driver_pod(pod: Any) -> bool:
+    labels = getattr(getattr(pod, "metadata", None), "labels", None) or {}
+    return labels.get(COMPONENT_LABEL) == DRIVER_COMPONENT
 
 
 class PySparkOnK8sOperator(PySparkOperator):
@@ -29,10 +41,12 @@ class PySparkOnK8sOperator(PySparkOperator):
         **kwargs: Any,
     ) -> None:
         executor_config = kwargs.pop("executor_config", None) or {}
-        pod_override = driver_conf.render_pod_specification()
-        # The decorator pre-fills the same pod_override so that mapped tasks carry it; anything else is the user's.
-        if "pod_override" in executor_config and executor_config["pod_override"] != pod_override:
+        # The decorator pre-fills a pod_override it rendered (mapped tasks need it before the operator exists).
+        # It carries our component label and is replaced by a fresh render; any other pod_override is the user's.
+        incoming = executor_config.get("pod_override")
+        if incoming is not None and not _is_driver_pod(incoming):
             raise ValueError("executor_config must not set pod_override: it is built from `driver_conf`")
+        pod_override = driver_conf.render_pod_specification()
         if "conn_id" in kwargs:
             raise ValueError("conn_id is not supported: the driver runs in the cluster")
         self.base_conf = base_conf if base_conf is not None else SparkBaseConf()
