@@ -35,7 +35,9 @@ This keeps shuffle traffic on one node or one zone when capacity allows, without
 
 ## Mapped tasks
 
-For mapped tasks the scheduler never runs the operator's `__init__`, so the operator cannot add the `pod_override`. The decorator therefore renders it when the task is decorated and stores it in the task arguments. When the operator is constructed on the worker, it renders `driver_conf` again and replaces a `pod_override` that carries the `pysparkonk8s/component: driver` label. A `pod_override` set by the user in `executor_config` is rejected.
+For mapped tasks the scheduler never runs the operator's `__init__`, so the operator cannot add the `pod_override`. The decorator therefore renders it when the task is decorated and stores it in the task arguments. When the operator is constructed on the worker, it keeps that pod, renders `driver_conf` again and replaces the pod in `executor_config` with the fresh one. A `pod_override` set by the user in `executor_config` is rejected.
+
+`.override(driver_conf=...)` on a mapped task does not render the pod again, so the driver pod that the KubernetesExecutor already started comes from the original `driver_conf`. At the start of `execute`, a mapped task compares that pod with a fresh render of its own `driver_conf`. If they differ, the task fails with a `PySparkOnK8sError` saying the driver pod was rendered from a different `driver_conf`. Pass `driver_conf` to `@task.pyspark_on_k8s(...)` itself for mapped tasks. Without any `driver_conf` in the decorator there is no pod at all, and the missing-variables check fails the task before the session starts.
 
 ## Lifecycle
 

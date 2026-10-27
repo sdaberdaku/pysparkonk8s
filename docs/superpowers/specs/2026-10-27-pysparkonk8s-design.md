@@ -1,6 +1,6 @@
 # pysparkonk8s: on-demand Spark clusters for `@task.pyspark` on Kubernetes
 
-- Status: draft for approval
+- Status: implemented; this text describes the behaviour of 1.0.0
 - Date: 2026-10-27
 - Repo: `sdaberdaku/pysparkonk8s` (new, public). PyPI: `airflow-provider-pysparkonk8s`. Import: `pysparkonk8s`.
 - Replaces: `sdaberdaku/apache-airflow-providers-pysparkonk8s` (Jan 2024, Airflow 2.8, never released). That repo gets archived with a pointer once 1.0.0 is out.
@@ -32,8 +32,9 @@ does that already). This project is the escape hatch for the task that needs iso
    render both the Spark conf and the Kubernetes pod spec of their component.
 5. Per-run follow-driver executor placement that is correct for concurrent runs and mapped tasks.
 6. Published on PyPI by a tag-triggered workflow, documented with mkdocs-material on GitHub Pages.
-7. Ready images on GHCR, built on every pull request (the e2e test uses them, nothing is pushed) and pushed for
-   amd64 and arm64 on release:
+7. Ready images on GHCR, built locally by the e2e test on every pull request (nothing is pushed), checked by a
+   release pre-flight (every row on a native amd64 and arm64 runner, import and `java -version` smoke test, before
+   anything reaches PyPI) and pushed for amd64 and arm64 on release:
    - driver `ghcr.io/sdaberdaku/pysparkonk8s/driver:<provider>-airflow<airflow>-python<python>` (plus `<provider>`
      and `latest` for the default row): the stock Airflow image with a JRE, pyspark and this package. Rows in
      1.0.0: Airflow 3.3.2 on Python 3.10, 3.12 and 3.14.
@@ -83,25 +84,30 @@ from pysparkonk8s import CPU, Memory, SparkBaseConf, SparkDriverConf, SparkExecu
 ```
 
 `SparkBaseConf` (cluster-level):
-`master` (default `k8s://https://kubernetes.default.svc.cluster.local:443`), `namespace` (default: the pod's
-own, via Downward API env), `image_pull_policy`, `image_pull_secrets`, `driver_port` (7078),
+`master` (default `k8s://https://kubernetes.default.svc:443`), `namespace` (default: the pod's
+own, via Downward API env; when set it must equal the worker pod's namespace), `image_pull_policy`,
+`image_pull_secrets` (executor pods only; the driver is the worker pod), `driver_port` (7078),
 `block_manager_port` (7079), `delete_executors_on_termination` (true), `executor_pod_template_path`
-(default `$AIRFLOW_HOME/pysparkonk8s/executor-pod-template.yaml`), `ca_cert_file`, `oauth_token_file`
-(service account mount defaults).
+(default `/tmp/pysparkonk8s/executor-pod-template.yaml`), `ca_cert_file`, `oauth_token_file` (default `None`;
+when set they render the client-mode keys `spark.kubernetes.authenticate.caCertFile` and
+`spark.kubernetes.authenticate.oauthTokenFile`; unset, Spark's client uses and refreshes the mounted service
+account token).
 
 `_K8sConf` (shared by driver and executor; abstract):
 `image` (required), `cores`, `memory`, `memory_overhead`, `memory_overhead_factor`, `request_cpu`, `limit_cpu`,
 `request_memory`, `limit_memory`, `request_ephemeral_storage`, `limit_ephemeral_storage`, `extra_java_options`,
 `extra_class_path`, `extra_library_path`, `service_account_name`, `tolerations`, `node_selector`, `affinity`,
 `volumes`, `volume_mounts`, `env`, `pod_labels`, `pod_annotations`. Every optional field that is `None` is
-omitted from the render. Requests default to Spark's own values (cpu = cores, memory = heap + overhead);
-limits are clamped up to the request. Kubernetes types are the `kubernetes.client` models, imported lazily so
+omitted from the render. `cores` must be a whole number of cores (Spark reads `spark.*.cores` as an integer);
+a fractional pod CPU goes in `request_cpu`. The `pysparkonk8s/component` label is applied after `pod_labels`, so
+users cannot override it. `CPU(milli=...)` and `Memory(bytes=...)` are keyword-only. Requests default to Spark's own values (cpu = cores, memory = heap + overhead);
+limits are clamped up to the request, and `spark.kubernetes.executor.limit.cores` renders the clamped value. Kubernetes types are the `kubernetes.client` models, imported lazily so
 DAG parsing stays cheap.
 
 `SparkDriverConf`: container name fixed to `base` (KubernetesExecutor injects the task there). Renders the
 `pod_override` V1Pod: resources, the component label `pysparkonk8s/component=driver`, Downward API env vars
 `SPARK_DRIVER_POD_NAME`, `SPARK_LOCAL_IP`, `SPARK_DRIVER_NAMESPACE`, plus the user's extras. No affinity by
-default (a driver never follows anything). Memory request defaults to heap + overhead with the driver overhead
+default (a driver never follows anything; `affinity=FOLLOW_DRIVER` on the driver raises `ValueError`). Memory request defaults to heap + overhead with the driver overhead
 factor defaulting to 0.4 (Spark's rule for non-JVM drivers: the pod also hosts the Airflow task runner, Python
 and py4j), floor 384Mi. Executors use Spark's 0.1 default. Both are overridable with `memory_overhead` or
 `memory_overhead_factor`.
@@ -129,8 +135,13 @@ the Downward API. Spark resolves them when the session starts. The executor temp
 env vars are missing at runtime (task not launched through the `pod_override`, for example on a Celery
 worker), the template writer raises a clear error before the session starts.
 
-Templating: the conf objects are not `template_fields`. Upstream already templates `config_kwargs`, so Jinja
-works in every value that ends up in the Spark conf (object fields that render to conf strings, and `extra`).
+Templating: the conf objects are not `template_fields`; `config_kwargs` is. Jinja works in every value that ends
+up in the Spark conf (object fields that render to conf strings, and `extra`) on all three entry points. The
+operator inherits `config_kwargs` from `PySparkOperator`. The decorated operator lists only `op_args` and
+`op_kwargs` first in its MRO, so `_PySparkOnK8sDecoratedOperator.template_fields` is the union of upstream's
+decorator fields and the operator's. The stock `@task.pyspark` does not template `config_kwargs`, so the
+helper's `pre_execute` hook renders it with `task.render_template` and the task context (Airflow renders
+template fields before `pre_execute` on 2.11 and 3.x, and rendering a rendered value again changes nothing).
 Pod spec fields (images, labels, affinity, volumes) are static: the driver `pod_override` is consumed by the
 scheduler before any task runs. Documented as such.
 
@@ -144,8 +155,18 @@ worker pod.
 
 - Helper: a `pre_execute` hook (still a `BaseOperator` parameter in the Airflow 3 Task SDK; the task runner
   calls it right before `execute`).
-- Decorator/operator: `execute_callable()` override that writes the file, then calls the upstream
-  implementation, which builds the session from `config_kwargs` and stops it in `finally`.
+- Decorator/operator: an `execute()` override that writes the file, then calls the upstream implementation,
+  which builds the session from `config_kwargs` and stops it in `finally`.
+
+### Mapped tasks
+
+The scheduler never runs the operator's `__init__` for mapped tasks, so the decorator renders the driver
+`pod_override` when it is applied and stores it in the decorator kwargs (`partial_kwargs`). On the worker the
+operator keeps that incoming pod (it carries our component label; any other `pod_override` raises), and at the
+start of `execute()` a mapped task (`map_index >= 0`) compares it with a fresh render of its own `driver_conf`.
+A mismatch, which `.override(driver_conf=...)` causes because `override` does not re-run the decorator, raises
+`PySparkOnK8sError` telling the user to pass `driver_conf` to `@task.pyspark_on_k8s(...)` itself. The classic
+`PySparkOnK8sOperator.partial(...).expand(...)` gets no `pod_override` at all; mapped tasks use the decorator.
 
 ### Placement
 
@@ -203,8 +224,9 @@ package so `import pysparkonk8s` stays free of Airflow imports.
 
 ### RBAC
 
-Client-mode Spark needs, in the worker namespace: `pods` (create, get, list, watch, delete, patch),
-`pods/log` (get), `configmaps` (create, get, list, delete) for the executor config map. Shipped as a tiny Helm
+Client-mode Spark needs, in the worker namespace: `pods` (create, get, list, watch, delete, patch, deletecollection),
+`pods/log` (get, list), `configmaps` (create, get, list, watch, delete, patch) for the executor config map and
+`services` (create, get, list, delete) for the driver headless service. Shipped as a tiny Helm
 chart `charts/pysparkonk8s-rbac` (Role + RoleBinding, value `serviceAccountName`, default `airflow-worker`),
 published as an OCI chart to `ghcr.io/sdaberdaku/charts/pysparkonk8s-rbac` on tag. Also shown as plain YAML in
 the docs.
@@ -242,13 +264,16 @@ appeared and are gone afterwards. Spark 4.x only.
 
 ### CI, release, protection
 
-- `ci.yml`: on pull requests (skipped for drafts) and on push to `main`: ruff, unit matrix, e2e, final `ci-ok` job.
+- `ci.yml`: on pull requests (skipped for drafts), on push to `main`, on manual runs and as a reusable workflow:
+  ruff, unit matrix, e2e, final `ci-ok` job.
 - Renovate (Mend app) keeps Python dependencies, the driver image inputs (`docker/images.json`), the e2e Helm chart
   version and action majors current; patch-level and action updates automerge after `ci-ok`.
-- `release.yml`: on tag `v*`: build sdist and wheel, publish to PyPI with trusted publishing (OIDC, no token),
-  push the OCI chart, build and push the driver images (amd64 and arm64, from the wheel built in the same run),
-  `gh release create` with generated notes. First push creates private GHCR packages; they are set to public
-  once, after the first release.
+- `release.yml`: on tag `v*` or by hand. `test` (full CI), `build` (sdist and wheel, version checks, `dist`
+  artifact) and `build-check` (every driver image row on native amd64 and arm64 runners, loaded, not pushed,
+  smoke tested) run in both cases, so a manual run is a dry run before tagging. Only for tags: `publish` (PyPI
+  trusted publishing with `skip-existing`, idempotent `gh release create`, environment `pypi`), then `image`
+  (multi-arch push) and `chart` (OCI chart), which need `publish`. The chart version must equal the tag on every
+  release. First push creates private GHCR packages; they are set to public once, after the first release.
 - `pages.yml`: mkdocs build and deploy on push to `main` touching `docs/**` or `mkdocs.yml`.
 - Protection on `main`: pull request required, `ci-ok` required, linear history, force push only by the owner.
 - Version 1.0.0 first release.
@@ -269,4 +294,6 @@ troubleshooting), limitations, development, release, changelog.
   `to_k8s()`), keeping the 2024 repo's shape where it fits.
 - How the e2e job gets images into kind and how it polls the DAG run.
 - The Dockerfile build arguments (`AIRFLOW_VERSION`, `PYTHON_VERSION`, `PYSPARK_VERSION`) and the image matrix file.
+  The image installs `pyspark` and `pyspark-client` at the same version, with `apache-airflow` pinned so pip does
+  not move Airflow.
 - mkdocs theme details.

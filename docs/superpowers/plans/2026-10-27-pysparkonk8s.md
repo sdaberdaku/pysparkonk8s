@@ -1,5 +1,7 @@
 # pysparkonk8s Implementation Plan
 
+> This plan was executed. Later rulings (kwarg names `driver_conf`/`executor_conf`/`base_conf`, template path `/tmp/pysparkonk8s/...`, client-mode auth keys, templating on all entry points, mapped-task override check, release pre-flight) are recorded in the design spec, which supersedes the task text below wherever they differ.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** An Airflow provider that turns a `@task.pyspark` task into a client-mode Spark driver on Kubernetes with ephemeral executor pods, shipped on PyPI with docs, CI and an e2e test.

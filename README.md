@@ -34,7 +34,7 @@ def count(spark=None):
 count.override(**pyspark_on_k8s(driver_conf=driver_conf, executor_conf=executor_conf))()
 ```
 
-To install the package in your own image, run `pip install airflow-provider-pysparkonk8s`. The image also needs a JRE and `pyspark==4.2.0`.
+To install the package in your own image, run `pip install airflow-provider-pysparkonk8s`. The image also needs a JRE, `pyspark==4.2.0` and `pyspark-client==4.2.0` (install both at the same version).
 
 ## Documentation
 

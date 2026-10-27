@@ -25,7 +25,7 @@ PySpark requires the same Python minor version on the driver and on the executor
 
 Set the driver image as the image of your Airflow workers (for the official Airflow chart, `images.airflow` or `defaultAirflowRepository` and `defaultAirflowTag`).
 
-To build an image for another Airflow or Python version, or to add your own dependencies, use `docker/driver.Dockerfile` from the repository. It takes the build arguments `AIRFLOW_VERSION`, `PYTHON_VERSION` and `PYSPARK_VERSION`, and installs the wheel from `dist/`. If you build your own image from another base, install the package with `pip install airflow-provider-pysparkonk8s` together with a JRE and `pyspark==4.2.0`.
+To build an image for another Airflow or Python version, or to add your own dependencies, use `docker/driver.Dockerfile` from the repository. It takes the build arguments `AIRFLOW_VERSION`, `PYTHON_VERSION` and `PYSPARK_VERSION`, and installs the wheel from `dist/`. If you build your own image from another base, install the package with `pip install airflow-provider-pysparkonk8s` together with a JRE, `pyspark==4.2.0` and `pyspark-client==4.2.0` (the same version for both).
 
 ## 3. Write a DAG
 

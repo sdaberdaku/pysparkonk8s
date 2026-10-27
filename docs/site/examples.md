@@ -108,7 +108,7 @@ def scaled_sum(n: int, spark=None):
 scaled_sum.expand(n=[1, 2, 3])
 ```
 
-The `map_index` label keeps the executors of one mapped instance attached to its own driver.
+The `map_index` label keeps the executors of one mapped instance attached to its own driver. Pass `driver_conf` to `@task.pyspark_on_k8s(...)` itself: `.override(driver_conf=...)` on a mapped task fails, because the driver pod is already running from the original conf.
 
 ## Several executors in one deployment
 

@@ -27,10 +27,10 @@ Executors connect to the driver, so the driver pod must accept traffic from exec
 The driver and the executors must satisfy these conditions.
 
 - Both need a JRE. The driver image installs `openjdk-17-jre-headless`, because the Debian bookworm base of the Airflow image has no Java 21.
-- The `pyspark` package on the driver must have the same version as the Spark of the executor image. The published images use 4.2.0.
+- The `pyspark` package on the driver must have the same version as the Spark of the executor image. Install `pyspark-client` at the same version as `pyspark`. The published images use 4.2.0 for both.
 - The Python minor version must be the same on both sides. Patch versions can differ.
 
-The published driver images are built from `docker/driver.Dockerfile`: `apache/airflow`, `openjdk-17-jre-headless`, `pyspark==4.2.0` and the provider wheel. Tags have the form `<provider version>-airflow<airflow version>-python<minor>` for Python 3.10, 3.12 and 3.14.
+The published driver images are built from `docker/driver.Dockerfile`: `apache/airflow`, `openjdk-17-jre-headless`, `pyspark==4.2.0`, `pyspark-client==4.2.0` and the provider wheel. Tags have the form `<provider version>-airflow<airflow version>-python<minor>` for Python 3.10, 3.12 and 3.14.
 
 Executor images come from two places. For Python 3.10 the stock `spark:4.2.0-python3` image works. For Python 3.11 to 3.15 the project `sdaberdaku/spark-images` publishes `ghcr.io/sdaberdaku/spark:4.2.0-python3.<minor>`: a python-slim base with a JRE, stock Spark, pandas and pyarrow. To add jars or Python packages, build an image `FROM` one of these and copy the jars to `/opt/spark/jars`.
 
@@ -48,7 +48,7 @@ The provider does not set `spark.ui.enabled`, so Spark's own default applies and
 | Executors stay `Pending` | Check the pod events. With a required rule such as `same_zone_as` or `one_per_node`, no node may satisfy it. Relax the rule, or add capacity in that zone. |
 | Driver pod `OOMKilled` | The driver pod also runs the Airflow task runner and Python. Raise `memory` or `memory_overhead` on `SparkDriverConf`. |
 | Executor pod `OOMKilled` | Raise `memory_overhead`, or `pyspark_memory` when Python workers use the memory. |
-| `ImagePullBackOff` | Check the image name and tag and set `image_pull_secrets` on `SparkBaseConf` for a private registry. |
+| `ImagePullBackOff` | Check the image name and tag. For executors from a private registry, set `image_pull_secrets` on `SparkBaseConf`; it applies to executor pods only, because the driver is the worker pod and takes its pull secrets from the worker pod template or service account. |
 | Executors cannot register with the driver | Check the NetworkPolicy for ports 7078 and 7079. |
 | Python version mismatch error at the first action | Use a driver and executor image with the same Python minor. |
 | `Forbidden` errors creating pods | The worker service account lacks the Role. Install the RBAC chart in the task namespace. |
