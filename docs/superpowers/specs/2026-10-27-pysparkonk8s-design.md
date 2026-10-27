@@ -31,7 +31,7 @@ does that already). This project is the escape hatch for the task that needs iso
 4. Config objects (`SparkBaseConf`, `SparkDriverConf`, `SparkExecutorConf`) with `CPU` / `Memory` value types that
    render both the Spark conf and the Kubernetes pod spec of their component.
 5. Per-run follow-driver executor placement that is correct for concurrent runs and mapped tasks.
-6. Published on PyPI by a tag-triggered workflow, documented like gluecat (mkdocs-material on GitHub Pages).
+6. Published on PyPI by a tag-triggered workflow, documented with mkdocs-material on GitHub Pages.
 
 ## Non-goals
 
@@ -45,15 +45,18 @@ does that already). This project is the escape hatch for the task that needs iso
 
 ## Anti-goals (would make it a failure even if it works)
 
-- Anything that names the author's employer, its clusters, images, buckets, node pools or account IDs. The code
-  is written fresh for this repo; the 2024 public repo (same author, Apache 2.0) may be reused, the private
-  on-demand-spark module may not be copied.
+- Anything that names a specific organisation's clusters, images, buckets, node pools or account IDs. The code
+  is written fresh for this repo; the 2024 public repo (same author, Apache 2.0) may be reused. No code is
+  copied from private codebases.
 - Test-mode branches in production code (the 2024 `is_test_run()` hack that skipped `spark.stop()` under pytest).
 - A pod template that needs an initContainer or placeholder tokens resolved at pod start.
 
 ## Constraints
 
-- Python 3.10 to 3.13 (3.13 only with Airflow 3).
+- Python 3.10 to 3.14. Airflow 2.11 runs on 3.10 to 3.12, Airflow 3.3 on 3.10 to 3.14; Airflow excludes 3.15,
+  and Airflow 3.4 (beta) and the providers released since October 2026 require 3.11+, so 3.10 support ends with
+  Airflow 3.3. PySpark requires the same Python minor on driver and executors; the stock `spark:4.2.0-python3`
+  images ship Python 3.10, so a driver on 3.11+ needs a custom executor image (documented).
 - Dependencies: `apache-airflow>=2.11`, `apache-airflow-providers-apache-spark>=6.3`,
   `apache-airflow-providers-cncf-kubernetes>=10`, `pyspark>=4.0`, `pyyaml`. No pins tighter than lower bounds.
 - Own namespace `pysparkonk8s` (Airflow asks third-party providers to stay out of `airflow.providers.*`).
@@ -61,7 +64,7 @@ does that already). This project is the escape hatch for the task that needs iso
 - The driver image is the Airflow worker image plus a JRE (17 or 21), full `pyspark`, and the jars the job needs.
   The executor image is a stock `spark:4.x` image (or a derived one). Both are supplied by the user; the config
   objects have no default image and fail fast if none is set.
-- License Apache 2.0. No attribution lines to AI tools in commits, PRs or docs.
+- License Apache 2.0.
 
 ## Design
 
@@ -218,10 +221,11 @@ tests/
 Unit (pytest, no cluster): every conf field renders or is omitted; clamping; `extra` unset; follow-driver
 affinity carries the run labels; template file written with safe label values for a mapped and an unmapped
 task; helper returns the right keys; decorator is registered and resolvable through `ProvidersManager`;
-operator sets `executor_config`. Matrix: Airflow 2.11 and 3.x, Python 3.10 to 3.13 (3.13 only on Airflow 3).
+operator sets `executor_config`. Matrix: Airflow 2.11 on Python 3.10 and 3.12; Airflow 3.3 on 3.10, 3.12 and 3.14.
 
-End to end (one CI job, kind, Airflow 3 only; 2.11 is covered by the unit matrix): build the example driver
-image, install Airflow with the official Helm chart and KubernetesExecutor, mount the example DAGs, trigger a
+End to end (one CI job, kind, Airflow 3 only; 2.11 is covered by the unit matrix): build the driver image from
+the stock Airflow image plus a JRE, pyspark and this package (Python 3.10 so it matches the stock
+`spark:4.2.0-python3` executor image), install Airflow with the official Helm chart and KubernetesExecutor, mount the example DAGs, trigger a
 DAG that runs one task through each entry point plus one mapped task, assert they succeed, assert executor pods
 appeared and are gone afterwards. Spark 4.x only.
 
@@ -231,10 +235,10 @@ appeared and are gone afterwards. Spark 4.x only.
 - `release.yml`: on tag `v*`: build sdist and wheel, publish to PyPI with trusted publishing (OIDC, no token),
   push the OCI chart, `gh release create` with generated notes.
 - `pages.yml`: mkdocs build and deploy on push to `main` touching `docs/**` or `mkdocs.yml`.
-- Ruleset on `main`: pull request required, `ci-ok` required, linear history, force push only by the owner.
+- Protection on `main`: pull request required, `ci-ok` required, linear history, force push only by the owner.
 - Version 1.0.0 first release.
 
-### Documentation (mkdocs-material, gluecat structure)
+### Documentation (mkdocs-material)
 
 index, quickstart (RBAC, image, first DAG), configuration (every field of the three objects, with Spark key and
 pod field it maps to), how-it-works (worker pod as driver, template write, labels and placement, lifecycle),
@@ -249,4 +253,4 @@ troubleshooting), limitations, development, release, changelog.
 - Exact names of minor fields and the `CPU` / `Memory` API surface (parsers, arithmetic, `to_spark()` /
   `to_k8s()`), keeping the 2024 repo's shape where it fits.
 - How the e2e job gets images into kind and how it polls the DAG run.
-- mkdocs theme details, copied from gluecat.
+- mkdocs theme details.
