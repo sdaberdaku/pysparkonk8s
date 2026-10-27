@@ -40,8 +40,8 @@ Both classes share the fields below. `image` is required. The Spark keys use `sp
 | `memory_overhead_factor` | `None` (0.4 driver, 0.1 executor) | used to compute `memoryOverhead` | part of the memory request |
 | `request_cpu` | `None` (uses `cores`) | `spark.kubernetes.executor.request.cores` (executor) | cpu request |
 | `limit_cpu` | `None` | `spark.kubernetes.executor.limit.cores` (executor) | cpu limit |
-| `request_memory` | `None` | | memory request, replaces the computed one |
-| `limit_memory` | `None` | | memory limit |
+| `request_memory` | `None` | | memory request, replaces the computed one (driver only) |
+| `limit_memory` | `None` | | memory limit (driver only) |
 | `request_ephemeral_storage` | `None` | | ephemeral-storage request |
 | `limit_ephemeral_storage` | `None` | | ephemeral-storage limit |
 | `extra_java_options` | `-XX:+ExitOnOutOfMemoryError` | `spark.{driver,executor}.extraJavaOptions` | |
@@ -82,9 +82,9 @@ The memory request of a pod is the JVM heap plus the overhead.
 - The heap is `memory`.
 - The overhead is `memory_overhead` when set, otherwise `max(memory * factor, 384Mi)`. The factor is `memory_overhead_factor` when set, otherwise 0.4 for the driver and 0.1 for executors. The driver default is higher because the driver pod also hosts the Airflow task runner and the Python process.
 - For executors, `pyspark_memory` is added to the request. Spark gives the Python workers that amount through `spark.executor.pyspark.memory`.
-- `request_memory` replaces the computed request entirely.
+- `request_memory` replaces the computed request entirely, for the driver pod only.
 
-The memory limit defaults to the request. CPU and ephemeral-storage limits default to none. Every limit that is set is raised to its request if it is lower, so a pod never has a limit below its request. For executor pods, Spark sets the memory limit itself from heap, overhead and PySpark memory.
+The memory limit defaults to the request. CPU and ephemeral-storage limits default to none. Every limit that is set is raised to its request if it is lower, so a pod never has a limit below its request. For executor pods, `request_memory` and `limit_memory` have no effect: Spark overwrites both the memory request and the memory limit of the executor container with heap + overhead + PySpark memory, whatever the template says. Control executor memory with `memory`, `memory_overhead` or `memory_overhead_factor`, and `pyspark_memory`.
 
 For example, an executor with `memory=Memory.gibibytes(4)` and `pyspark_memory=Memory.gibibytes(1)` gets an overhead of about 410Mi (0.1 of 4Gi, above the 384Mi floor) and requests about 5.4Gi.
 

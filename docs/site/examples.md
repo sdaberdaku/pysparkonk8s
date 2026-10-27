@@ -1,6 +1,6 @@
 # Examples
 
-The snippets assume these imports and the two conf objects from the [quick start](quickstart.md):
+The snippets assume these imports and image names. `driver_conf` and `executor_conf` are the objects from the [quick start](quickstart.md):
 
 ```python
 from airflow.sdk import task  # airflow.decorators on Airflow 2
@@ -9,6 +9,9 @@ from pysparkonk8s import (
     CPU, Memory, SparkBaseConf, SparkDriverConf, SparkExecutorConf,
     one_per_node, pyspark_on_k8s, same_zone_as,
 )
+
+DRIVER_IMAGE = "ghcr.io/sdaberdaku/pysparkonk8s/driver:1.0.0-airflow3.3.2-python3.12"
+EXECUTOR_IMAGE = "ghcr.io/sdaberdaku/spark:4.2.0-python3.12"
 ```
 
 ## Dynamic allocation

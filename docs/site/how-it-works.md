@@ -18,7 +18,7 @@ The Spark conf refers to them as `${env:SPARK_DRIVER_POD_NAME}`, `${env:SPARK_LO
 
 ## The executor pod template
 
-Executors are created from a pod template file, which carries everything Spark properties cannot express: placement, volumes, tolerations, labels and so on. The file is written inside the driver pod, at `executor_pod_template_path` (default `/tmp/pysparkonk8s/executor-pod-template.yaml`), after the task's templates are rendered and before the session starts. With the helper and the decorator, a `pre_execute` hook writes it; the operator writes it at the start of `execute`. Both check the environment variables first.
+Executors are created from a pod template file, which carries everything Spark properties cannot express: placement, volumes, tolerations, labels and so on. The file is written inside the driver pod, at `executor_pod_template_path` (default `/tmp/pysparkonk8s/executor-pod-template.yaml`), after the task's templates are rendered and before the session starts. With the helper, a `pre_execute` hook writes it. The operator, and the decorator built on it, write it at the start of `execute`. Each checks the environment variables first.
 
 The template labels every executor with `dag_id`, `task_id`, `run_id` and, for mapped tasks, `map_index`, the same labels the KubernetesExecutor puts on the driver pod, plus `pysparkonk8s/component=executor`. The driver carries `pysparkonk8s/component=driver`. Label values are made label-safe with the same function the KubernetesExecutor uses.
 
@@ -40,7 +40,7 @@ For mapped tasks the scheduler never runs the operator's `__init__`, so the oper
 ## Lifecycle
 
 1. The KubernetesExecutor starts the worker pod from the `pod_override`.
-2. The pre-execute hook (or the operator) checks the environment and writes the executor template.
+2. The `pre_execute` hook (helper) or `execute` (operator and decorator) checks the environment and writes the executor template.
 3. The `@task.pyspark` machinery starts the Spark session. Spark creates executor pods owned by the driver pod, from the template.
 4. The task function runs.
 5. When the session stops, Spark deletes the executors (`spark.kubernetes.executor.deleteOnTermination`, true by default). The executor pods are also owned by the driver pod, so Kubernetes removes them if the driver pod disappears.
