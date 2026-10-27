@@ -16,7 +16,11 @@ _K8S_UNITS = {
     "E": 10**18, "P": 10**15, "T": 10**12, "G": 10**9, "M": 10**6, "k": 10**3,
     "": 1,
 }  # fmt: skip
-_SPARK_UNITS = {"t": 2**40, "g": 2**30, "m": 2**20, "k": 2**10}
+_SPARK_UNITS = {"b": 1} | {
+    prefix + suffix: 2**shift
+    for prefix, shift in (("k", 10), ("m", 20), ("g", 30), ("t", 40), ("p", 50))
+    for suffix in ("", "b")
+}
 
 
 def _parse_size(text: str, units: dict[str, int], kind: str) -> int:
@@ -109,12 +113,15 @@ class Memory:
         return cls(round(x * 10**6))
 
     @classmethod
-    def from_k8s_spec(cls, quantity: str) -> Memory:
+    def from_k8s_spec(cls, quantity: str | int) -> Memory:
+        if isinstance(quantity, int) and not isinstance(quantity, bool):
+            return cls(quantity)
         return cls(_parse_size(quantity, _K8S_UNITS, "Kubernetes"))
 
     @classmethod
     def from_spark_spec(cls, quantity: str) -> Memory:
-        return cls(_parse_size(quantity, _SPARK_UNITS, "Spark"))
+        text = quantity.lower() if isinstance(quantity, str) else quantity
+        return cls(_parse_size(text, _SPARK_UNITS, "Spark"))
 
     def _mebibytes_up(self) -> int:
         return math.ceil(self.bytes / _MIB)

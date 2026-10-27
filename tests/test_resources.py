@@ -42,3 +42,15 @@ def test_memory_arithmetic_rounds_up():
 def test_memory_rejects_garbage(bad):
     with pytest.raises(ValueError):
         Memory.from_k8s_spec(bad)
+
+
+@pytest.mark.parametrize(
+    "spec,expected",
+    [("4G", Memory.gibibytes(4)), ("512M", Memory.mebibytes(512)), ("4gb", Memory.gibibytes(4)), ("1b", Memory(1))],
+)
+def test_memory_from_spark_spec_is_case_and_suffix_tolerant(spec, expected):
+    assert Memory.from_spark_spec(spec) == expected
+
+
+def test_memory_from_k8s_spec_accepts_int_bytes():
+    assert Memory.from_k8s_spec(1048576) == Memory.mebibytes(1)
