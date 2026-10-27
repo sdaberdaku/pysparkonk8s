@@ -1,0 +1,107 @@
+# CI for pull requests, manual runs and reuse from other workflows (workflow_call).
+#
+# Draft PRs: the `plan` job is skipped, and every other job needs it, so nothing runs.
+# `ci-ok` has `if: always()` and fails unless lint, test, docs and e2e all succeeded,
+# so a draft PR shows it red. Mark the PR ready for review to run the real checks.
+# `ci-ok` is the single required status check of the branch protection.
+#
+# workflow_call input `full` (default true): false runs only the `smoke` rows of matrix.json.
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      full:
+        description: Run the whole matrix (false runs only the smoke rows)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: matrix
+        env:
+          FULL: ${{ inputs.full }}
+        run: |
+          if [ "$FULL" = "false" ]; then
+            filter='map(select(.smoke))'
+          else
+            filter='.'
+          fi
+          echo "matrix=$(jq -c "$filter" matrix.json)" >> "$GITHUB_OUTPUT"
+
+  lint:
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+
+  test:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: test (airflow ${{ matrix.airflow }}, python ${{ matrix.python }})
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --python ${{ matrix.python }}
+      # The lock holds Airflow 3; drop it first so no airflow-core/task-sdk files linger under a 2.x row.
+      - run: |
+          uv pip uninstall apache-airflow apache-airflow-core apache-airflow-task-sdk
+          uv pip install "apache-airflow==${{ matrix.airflow }}"
+      - run: uv run --no-sync pytest -q
+
+  docs:
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - run: "true" # replaced by `mkdocs build --strict` with the docs site
+
+  e2e:
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - run: "true" # replaced by the kind-based end-to-end test
+
+  ci-ok:
+    needs: [lint, test, docs, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: test
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needs results: $RESULTS"
+          for r in $RESULTS; do
+            [ "$r" = "success" ] || exit 1
+          done

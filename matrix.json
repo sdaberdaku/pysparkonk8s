@@ -1,0 +1,7 @@
+[
+  {"airflow": "2.11.*", "python": "3.10", "smoke": true},
+  {"airflow": "2.11.*", "python": "3.12", "smoke": false},
+  {"airflow": "3.3.*", "python": "3.10", "smoke": true},
+  {"airflow": "3.3.*", "python": "3.12", "smoke": false},
+  {"airflow": "3.3.*", "python": "3.14", "smoke": true}
+]

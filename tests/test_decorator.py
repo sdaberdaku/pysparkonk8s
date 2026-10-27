@@ -10,7 +10,7 @@ def test_decorator_is_registered_through_providers_manager():
 
 
 def test_task_pyspark_on_k8s(task):
-    from airflow.sdk import DAG
+    from airflow.providers.common.compat.sdk import DAG
 
     @task.pyspark_on_k8s(driver_conf=SparkDriverConf(image="d"), executor_conf=SparkExecutorConf(image="e"))
     def job(spark):
