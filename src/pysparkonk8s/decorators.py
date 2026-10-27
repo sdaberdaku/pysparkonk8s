@@ -49,6 +49,12 @@ def pyspark_on_k8s_task(
     multiple_outputs: bool | None = None,
     **kwargs,
 ) -> TaskDecorator:
+    # Mapped tasks (`.expand`) never run the operator __init__ in the scheduler, so the pod_override
+    # must already sit in the decorator kwargs (partial_kwargs) for KubernetesExecutor to see it.
+    driver_conf = kwargs.get("driver_conf")
+    if driver_conf is not None:
+        executor_config = kwargs.get("executor_config") or {}
+        kwargs["executor_config"] = {**executor_config, "pod_override": driver_conf.render_pod_specification()}
     return task_decorator_factory(
         python_callable=python_callable,
         multiple_outputs=multiple_outputs,

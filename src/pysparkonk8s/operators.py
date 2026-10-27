@@ -29,7 +29,9 @@ class PySparkOnK8sOperator(PySparkOperator):
         **kwargs: Any,
     ) -> None:
         executor_config = kwargs.pop("executor_config", None) or {}
-        if "pod_override" in executor_config:
+        pod_override = driver_conf.render_pod_specification()
+        # The decorator pre-fills the same pod_override so that mapped tasks carry it; anything else is the user's.
+        if "pod_override" in executor_config and executor_config["pod_override"] != pod_override:
             raise ValueError("executor_config must not set pod_override: it is built from `driver_conf`")
         if "conn_id" in kwargs:
             raise ValueError("conn_id is not supported: the driver runs in the cluster")
@@ -43,7 +45,7 @@ class PySparkOnK8sOperator(PySparkOperator):
             config_kwargs=build_spark_conf(self.base_conf, driver_conf, executor_conf, extra),
             op_args=op_args,
             op_kwargs=op_kwargs,
-            executor_config={**executor_config, "pod_override": driver_conf.render_pod_specification()},
+            executor_config={**executor_config, "pod_override": pod_override},
             **kwargs,
         )
 
