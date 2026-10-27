@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
@@ -396,3 +397,20 @@ class SparkExecutorConf(_K8sConf):
         if self.affinity is FOLLOW_DRIVER:
             return follow_driver(run)
         return super()._render_affinity(run)
+
+
+def build_spark_conf(
+    base: SparkBaseConf,
+    driver: SparkDriverConf,
+    executor: SparkExecutorConf,
+    extra: Mapping[str, str | None] | None = None,
+) -> dict[str, str]:
+    """Merge base, driver and executor Spark conf, then apply ``extra`` (``None`` removes a key).
+    Later sources win on key clashes."""
+    conf = {**base.render_spark_conf(), **driver.render_spark_conf(), **executor.render_spark_conf()}
+    for key, value in (extra or {}).items():
+        if value is None:
+            conf.pop(key, None)
+        else:
+            conf[key] = value
+    return conf
