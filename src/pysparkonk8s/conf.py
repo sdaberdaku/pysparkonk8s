@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar
+from enum import Enum
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from pysparkonk8s.resources import CPU, Memory
 
@@ -17,6 +18,17 @@ DRIVER_ENV_NAMESPACE = "SPARK_DRIVER_NAMESPACE"
 COMPONENT_LABEL = "pysparkonk8s/component"
 DRIVER_COMPONENT = "driver"
 EXECUTOR_COMPONENT = "executor"
+HOSTNAME_TOPOLOGY = "kubernetes.io/hostname"
+ZONE_TOPOLOGY = "topology.kubernetes.io/zone"
+
+_Sized = TypeVar("_Sized", CPU, Memory)
+
+
+class _Sentinel(Enum):
+    FOLLOW_DRIVER = "FOLLOW_DRIVER"
+
+
+FOLLOW_DRIVER = _Sentinel.FOLLOW_DRIVER
 
 
 @dataclass(kw_only=True)
@@ -55,7 +67,111 @@ class SparkBaseConf:
         return conf
 
 
-def _clamp_up(limit, request):
+@dataclass(frozen=True)
+class RunIdentity:
+    """Airflow task-instance identity; values are already label-safe."""
+
+    dag_id: str
+    task_id: str
+    run_id: str
+    map_index: int | None = None
+
+    def labels(self) -> dict[str, str]:
+        """The labels KubernetesExecutor stamps on the worker pod (the Spark driver)."""
+        labels = {"dag_id": self.dag_id, "task_id": self.task_id, "run_id": self.run_id}
+        if self.map_index is not None:
+            labels["map_index"] = str(self.map_index)
+        return labels
+
+
+@dataclass(frozen=True)
+class PlacementRule:
+    """Required node and pod placement; combine rules with ``&``."""
+
+    zone: str | None = None
+    anti_affinity_per_run: bool | None = None  # None: no anti-affinity
+
+    def __and__(self, other: PlacementRule) -> PlacementRule:
+        return PlacementRule(
+            zone=self.zone if self.zone is not None else other.zone,
+            anti_affinity_per_run=(
+                self.anti_affinity_per_run if self.anti_affinity_per_run is not None else other.anti_affinity_per_run
+            ),
+        )
+
+    def render(self, run: RunIdentity | None) -> k8s.V1Affinity:
+        from kubernetes.client import models as k8s
+
+        node_affinity = pod_anti_affinity = None
+        if self.zone is not None:
+            node_affinity = k8s.V1NodeAffinity(
+                required_during_scheduling_ignored_during_execution=k8s.V1NodeSelector(
+                    node_selector_terms=[
+                        k8s.V1NodeSelectorTerm(
+                            match_expressions=[
+                                k8s.V1NodeSelectorRequirement(key=ZONE_TOPOLOGY, operator="In", values=[self.zone])
+                            ]
+                        )
+                    ]
+                )
+            )
+        if self.anti_affinity_per_run is not None:
+            if self.anti_affinity_per_run and run is None:
+                raise ValueError("per-run placement rules apply to executors only")
+            pod_anti_affinity = k8s.V1PodAntiAffinity(
+                required_during_scheduling_ignored_during_execution=[
+                    k8s.V1PodAffinityTerm(
+                        topology_key=HOSTNAME_TOPOLOGY,
+                        label_selector=k8s.V1LabelSelector(
+                            match_expressions=[
+                                k8s.V1LabelSelectorRequirement(
+                                    key=COMPONENT_LABEL, operator="In", values=[DRIVER_COMPONENT, EXECUTOR_COMPONENT]
+                                )
+                            ],
+                            match_labels=run.labels() if self.anti_affinity_per_run else None,
+                        ),
+                    )
+                ]
+            )
+        return k8s.V1Affinity(node_affinity=node_affinity, pod_anti_affinity=pod_anti_affinity)
+
+
+def same_zone_as(zone: str) -> PlacementRule:
+    """Require nodes in ``zone``."""
+    return PlacementRule(zone=zone)
+
+
+def one_per_node(per_run: bool = True) -> PlacementRule:
+    """Keep Spark pods of one run (or of any run, when ``per_run`` is false) on separate nodes."""
+    return PlacementRule(anti_affinity_per_run=per_run)
+
+
+def follow_driver(run: RunIdentity) -> k8s.V1Affinity:
+    """Prefer the run's driver node, then its executors' nodes, then the same zone."""
+    from kubernetes.client import models as k8s
+
+    def term(weight: int, topology_key: str, component: str) -> k8s.V1WeightedPodAffinityTerm:
+        return k8s.V1WeightedPodAffinityTerm(
+            weight=weight,
+            pod_affinity_term=k8s.V1PodAffinityTerm(
+                topology_key=topology_key,
+                label_selector=k8s.V1LabelSelector(match_labels={**run.labels(), COMPONENT_LABEL: component}),
+            ),
+        )
+
+    return k8s.V1Affinity(
+        pod_affinity=k8s.V1PodAffinity(
+            preferred_during_scheduling_ignored_during_execution=[
+                term(100, HOSTNAME_TOPOLOGY, DRIVER_COMPONENT),
+                term(75, HOSTNAME_TOPOLOGY, EXECUTOR_COMPONENT),
+                term(50, ZONE_TOPOLOGY, DRIVER_COMPONENT),
+                term(25, ZONE_TOPOLOGY, EXECUTOR_COMPONENT),
+            ]
+        )
+    )
+
+
+def _clamp_up(limit: _Sized | None, request: _Sized | None) -> _Sized | None:
     """Raise ``limit`` to ``request`` when it is below it; ``None`` limits stay unset."""
     return limit if limit is None or request is None else max(limit, request)
 
@@ -110,14 +226,16 @@ class _K8sConf(ABC):
         memory = self.request_memory
         if memory is None and self.memory is not None:
             memory = self.memory + self.effective_memory_overhead()
-        return self.request_cpu or self.cores, memory, self.request_ephemeral_storage
+        cpu = self.cores if self.request_cpu is None else self.request_cpu
+        return cpu, memory, self.request_ephemeral_storage
 
     def effective_limits(self) -> tuple[CPU | None, Memory | None, Memory | None]:
         """Return (cpu, memory, ephemeral storage) limits, each clamped up to its request."""
         cpu, memory, ephemeral = self.effective_requests()
+        limit_memory = _clamp_up(self.limit_memory, memory)
         return (
             _clamp_up(self.limit_cpu, cpu),
-            _clamp_up(self.limit_memory, memory) or memory,
+            memory if limit_memory is None else limit_memory,
             _clamp_up(self.limit_ephemeral_storage, ephemeral),
         )
 
@@ -141,8 +259,13 @@ class _K8sConf(ABC):
     @abstractmethod
     def _render_env(self) -> list | None: ...
 
-    @abstractmethod
-    def _render_affinity(self, run: RunIdentity | None) -> Any: ...  # noqa: F821 (RunIdentity: Task 5)
+    def _render_affinity(self, run: RunIdentity | None) -> Any:
+        if isinstance(self.affinity, PlacementRule):
+            return self.affinity.render(run)
+        return self.affinity
+
+    def _render_labels(self, run: RunIdentity | None) -> dict[str, str]:
+        return {COMPONENT_LABEL: self.component, **self.pod_labels}
 
     def _render_resources(self) -> k8s.V1ResourceRequirements:
         from kubernetes.client import models as k8s
@@ -160,12 +283,12 @@ class _K8sConf(ABC):
             limits=quantities(*self.effective_limits()),
         )
 
-    def render_pod_specification(self, run: RunIdentity | None = None) -> k8s.V1Pod:  # noqa: F821
+    def render_pod_specification(self, run: RunIdentity | None = None) -> k8s.V1Pod:
         from kubernetes.client import models as k8s
 
         return k8s.V1Pod(
             metadata=k8s.V1ObjectMeta(
-                labels={COMPONENT_LABEL: self.component, **self.pod_labels},
+                labels=self._render_labels(run),
                 annotations=self.pod_annotations or None,
             ),
             spec=k8s.V1PodSpec(
@@ -210,5 +333,66 @@ class SparkDriverConf(_K8sConf):
             downward(DRIVER_ENV_NAMESPACE, "metadata.namespace"),
         ]
 
-    def _render_affinity(self, run: RunIdentity | None) -> Any:  # noqa: F821 (RunIdentity: Task 5)
-        return self.affinity
+
+@dataclass(kw_only=True)
+class SparkExecutorConf(_K8sConf):
+    """Executor pods, rendered into the pod template file Spark reads."""
+
+    component: ClassVar[str] = EXECUTOR_COMPONENT
+    container_name: ClassVar[str] = "spark-kubernetes-executor"
+    default_overhead_factor: ClassVar[float] = 0.1
+
+    instances: int | None = None
+    dynamic_allocation: bool = True
+    min_executors: int = 0
+    max_executors: int = 10
+    allocation_batch_size: int | None = None
+    shuffle_tracking: bool = True
+    pyspark_memory: Memory | None = None
+    affinity: Any | None = FOLLOW_DRIVER
+
+    def effective_requests(self) -> tuple[CPU | None, Memory | None, Memory | None]:
+        cpu, memory, ephemeral = super().effective_requests()
+        if self.request_memory is None and memory is not None and self.pyspark_memory is not None:
+            memory = memory + self.pyspark_memory
+        return cpu, memory, ephemeral
+
+    def render_spark_conf(self) -> dict[str, str]:
+        conf = super().render_spark_conf()
+        conf["spark.kubernetes.executor.container.image"] = self.image
+        conf["spark.kubernetes.executor.podTemplateContainerName"] = self.container_name
+        if self.service_account_name:
+            conf["spark.kubernetes.authenticate.executor.serviceAccountName"] = self.service_account_name
+        cpu, _, _ = self.effective_requests()
+        if cpu is not None:
+            conf["spark.kubernetes.executor.request.cores"] = cpu.to_spark_spec()
+        if self.limit_cpu is not None:
+            conf["spark.kubernetes.executor.limit.cores"] = self.limit_cpu.to_spark_spec()
+        if self.pyspark_memory is not None:
+            conf["spark.executor.pyspark.memory"] = self.pyspark_memory.to_spark_spec()
+        conf["spark.dynamicAllocation.enabled"] = str(self.dynamic_allocation).lower()
+        if self.dynamic_allocation:
+            conf["spark.dynamicAllocation.shuffleTracking.enabled"] = str(self.shuffle_tracking).lower()
+            conf["spark.dynamicAllocation.minExecutors"] = str(self.min_executors)
+            conf["spark.dynamicAllocation.maxExecutors"] = str(self.max_executors)
+        elif self.instances is not None:
+            conf["spark.executor.instances"] = str(self.instances)
+        if self.allocation_batch_size is not None:
+            conf["spark.kubernetes.allocation.batch.size"] = str(self.allocation_batch_size)
+        return conf
+
+    def render_pod_specification(self, run: RunIdentity | None = None) -> k8s.V1Pod:
+        if run is None:
+            raise ValueError("executor pod templates need the run identity")
+        return super().render_pod_specification(run)
+
+    def _render_env(self) -> list | None:
+        return self.env
+
+    def _render_labels(self, run: RunIdentity | None) -> dict[str, str]:
+        return {COMPONENT_LABEL: self.component, **run.labels(), **self.pod_labels}
+
+    def _render_affinity(self, run: RunIdentity | None) -> Any:
+        if self.affinity is FOLLOW_DRIVER:
+            return follow_driver(run)
+        return super()._render_affinity(run)
