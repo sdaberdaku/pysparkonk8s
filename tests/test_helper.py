@@ -6,8 +6,8 @@ from pysparkonk8s import SparkBaseConf, SparkDriverConf, SparkExecutorConf, pysp
 
 def test_helper_returns_override_kwargs():
     kw = pyspark_on_k8s(
-        driver=SparkDriverConf(image="d"),
-        executor=SparkExecutorConf(image="e"),
+        driver_conf=SparkDriverConf(image="d"),
+        executor_conf=SparkExecutorConf(image="e"),
         extra={"spark.x": "1"},
         executor_name="KubernetesExecutor",
     )
@@ -17,7 +17,9 @@ def test_helper_returns_override_kwargs():
     assert kw["config_kwargs"]["spark.master"].startswith("k8s://")
     assert kw["executor_config"]["pod_override"].spec.containers[0].name == "base"
     assert callable(kw["pre_execute"])
-    assert "executor" not in pyspark_on_k8s(driver=SparkDriverConf(image="d"), executor=SparkExecutorConf(image="e"))
+    assert "executor" not in pyspark_on_k8s(
+        driver_conf=SparkDriverConf(image="d"), executor_conf=SparkExecutorConf(image="e")
+    )
 
 
 def test_helper_applies_to_stock_decorator(task):
@@ -26,7 +28,8 @@ def test_helper_applies_to_stock_decorator(task):
         return 1
 
     op = job.override(
-        task_id="j", **pyspark_on_k8s(driver=SparkDriverConf(image="d"), executor=SparkExecutorConf(image="e"))
+        task_id="j",
+        **pyspark_on_k8s(driver_conf=SparkDriverConf(image="d"), executor_conf=SparkExecutorConf(image="e")),
     )
     assert op.kwargs["executor_config"]["pod_override"].metadata.labels["pysparkonk8s/component"] == "driver"
     assert op.kwargs["config_kwargs"]["spark.submit.deployMode"] == "client"
@@ -36,9 +39,9 @@ def test_hook_writes_template(tmp_path, monkeypatch):
     for n, v in {"SPARK_DRIVER_POD_NAME": "p", "SPARK_LOCAL_IP": "ip", "SPARK_DRIVER_NAMESPACE": "ns"}.items():
         monkeypatch.setenv(n, v)
     kw = pyspark_on_k8s(
-        base=SparkBaseConf(executor_pod_template_path=str(tmp_path / "t.yaml")),
-        driver=SparkDriverConf(image="d"),
-        executor=SparkExecutorConf(image="e"),
+        base_conf=SparkBaseConf(executor_pod_template_path=str(tmp_path / "t.yaml")),
+        driver_conf=SparkDriverConf(image="d"),
+        executor_conf=SparkExecutorConf(image="e"),
     )
     hook = pickle.loads(pickle.dumps(kw["pre_execute"]))
     ctx = {

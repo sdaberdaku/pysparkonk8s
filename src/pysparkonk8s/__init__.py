@@ -19,6 +19,7 @@ __all__ = [
     "FOLLOW_DRIVER",
     "Memory",
     "PySparkOnK8sError",
+    "PySparkOnK8sOperator",
     "SparkBaseConf",
     "SparkDriverConf",
     "SparkExecutorConf",
@@ -28,3 +29,12 @@ __all__ = [
     "pyspark_on_k8s",
     "same_zone_as",
 ]
+
+
+def __getattr__(name: str):
+    # Lazy: keeps `import pysparkonk8s` free of Airflow.
+    if name == "PySparkOnK8sOperator":
+        from pysparkonk8s.operators import PySparkOnK8sOperator
+
+        return PySparkOnK8sOperator
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
