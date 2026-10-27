@@ -1,0 +1,6 @@
+# Service account of the Airflow worker pod that runs the Spark driver.
+serviceAccountName: airflow-worker
+nameOverride: ""
+# Extra labels and annotations added to the Role and RoleBinding.
+labels: {}
+annotations: {}
