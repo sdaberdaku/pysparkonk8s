@@ -1,0 +1,129 @@
+# Release on a tag vX.Y.Z: full CI, then PyPI + GitHub release, then driver images and the RBAC chart.
+# The image and chart jobs need `publish`, so nothing is pushed to GHCR when PyPI failed.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+    with:
+      full: true
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: write # gh release create
+      id-token: write # PyPI trusted publishing
+    outputs:
+      images: ${{ steps.images.outputs.images }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+      # The version is dynamic (hatch reads it from provider_info.py), which `uv version` cannot read.
+      - name: Check the tag matches the package and chart versions
+        run: |
+          pkg=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/pysparkonk8s/provider_info.py)
+          chart=$(sed -n 's/^version: \(.*\)$/\1/p' charts/pysparkonk8s-rbac/Chart.yaml)
+          echo "tag=$GITHUB_REF_NAME package=v$pkg chart=v$chart"
+          test "v$pkg" = "$GITHUB_REF_NAME"
+          test "v$chart" = "$GITHUB_REF_NAME"
+      - run: uv build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+      - uses: pypa/gh-action-pypi-publish@release/v1
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v h="## [$version]" 'index($0, h) == 1 {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --notes-file notes.md
+      - id: images
+        run: echo "images=$(jq -c . docker/images.json)" >> "$GITHUB_OUTPUT"
+
+  image:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.publish.outputs.images) }}
+    name: image (airflow ${{ matrix.airflow }}, python ${{ matrix.python }})
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tags
+        id: tags
+        env:
+          AIRFLOW: ${{ matrix.airflow }}
+          PYTHON: ${{ matrix.python }}
+          LATEST: ${{ matrix.latest }}
+        run: |
+          repo=ghcr.io/sdaberdaku/pysparkonk8s/driver
+          version="${GITHUB_REF_NAME#v}"
+          {
+            echo "tags<<EOF"
+            echo "$repo:$version-airflow$AIRFLOW-python$PYTHON"
+            if [ "$LATEST" = "true" ]; then
+              echo "$repo:$version"
+              echo "$repo:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/driver.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          build-args: |
+            AIRFLOW_VERSION=${{ matrix.airflow }}
+            PYTHON_VERSION=${{ matrix.python }}
+            PYSPARK_VERSION=${{ matrix.pyspark }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha,scope=driver-airflow${{ matrix.airflow }}-python${{ matrix.python }}
+          cache-to: type=gha,mode=max,scope=driver-airflow${{ matrix.airflow }}-python${{ matrix.python }}
+
+  chart:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the chart version matches the tag
+        run: |
+          test "v$(sed -n 's/^version: \(.*\)$/\1/p' charts/pysparkonk8s-rbac/Chart.yaml)" = "$GITHUB_REF_NAME"
+      - name: Package and push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$GITHUB_TOKEN"
+          helm package charts/pysparkonk8s-rbac
+          helm push pysparkonk8s-rbac-*.tgz oci://ghcr.io/sdaberdaku/charts
