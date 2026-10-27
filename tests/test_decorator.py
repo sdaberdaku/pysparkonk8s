@@ -1,4 +1,5 @@
 import pendulum
+import pytest
 
 from pysparkonk8s import SparkDriverConf, SparkExecutorConf
 
@@ -45,3 +46,14 @@ def test_override_driver_conf_replaces_prefilled_pod_override(task):
     with DAG("o", start_date=pendulum.datetime(2025, 1, 1)):
         op = job.override(driver_conf=SparkDriverConf(image="other"))().operator
     assert op.executor_config["pod_override"].spec.containers[0].image == "other"
+
+
+def test_decorator_rejects_user_pod_override(task):
+    from kubernetes.client import models as k8s
+
+    with pytest.raises(ValueError, match="pod_override"):
+        task.pyspark_on_k8s(
+            driver_conf=SparkDriverConf(image="d"),
+            executor_conf=SparkExecutorConf(image="e"),
+            executor_config={"pod_override": k8s.V1Pod()},
+        )

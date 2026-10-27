@@ -23,6 +23,13 @@ def _is_driver_pod(pod: Any) -> bool:
     return labels.get(COMPONENT_LABEL) == DRIVER_COMPONENT
 
 
+def check_pod_override(executor_config: Mapping) -> None:
+    """Reject a ``pod_override`` that is not the one rendered from ``driver_conf`` (it carries our component label)."""
+    incoming = executor_config.get("pod_override")
+    if incoming is not None and not _is_driver_pod(incoming):
+        raise ValueError("executor_config must not set pod_override: it is built from `driver_conf`")
+
+
 class PySparkOnK8sOperator(PySparkOperator):
     """Run ``python_callable(spark)`` in a driver pod that starts its executors in-cluster."""
 
@@ -43,9 +50,7 @@ class PySparkOnK8sOperator(PySparkOperator):
         executor_config = kwargs.pop("executor_config", None) or {}
         # The decorator pre-fills a pod_override it rendered (mapped tasks need it before the operator exists).
         # It carries our component label and is replaced by a fresh render; any other pod_override is the user's.
-        incoming = executor_config.get("pod_override")
-        if incoming is not None and not _is_driver_pod(incoming):
-            raise ValueError("executor_config must not set pod_override: it is built from `driver_conf`")
+        check_pod_override(executor_config)
         pod_override = driver_conf.render_pod_specification()
         if "conn_id" in kwargs:
             raise ValueError("conn_id is not supported: the driver runs in the cluster")

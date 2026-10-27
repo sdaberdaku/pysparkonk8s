@@ -8,7 +8,7 @@ from collections.abc import Callable, Sequence
 from airflow.providers.apache.spark.operators.spark_pyspark import SPARK_CONTEXT_KEYS
 from airflow.providers.common.compat.sdk import DecoratedOperator, TaskDecorator, task_decorator_factory
 
-from pysparkonk8s.operators import PySparkOnK8sOperator
+from pysparkonk8s.operators import PySparkOnK8sOperator, check_pod_override
 
 
 class _PySparkOnK8sDecoratedOperator(DecoratedOperator, PySparkOnK8sOperator):
@@ -54,6 +54,7 @@ def pyspark_on_k8s_task(
     driver_conf = kwargs.get("driver_conf")
     if driver_conf is not None:
         executor_config = kwargs.get("executor_config") or {}
+        check_pod_override(executor_config)
         kwargs["executor_config"] = {**executor_config, "pod_override": driver_conf.render_pod_specification()}
     return task_decorator_factory(
         python_callable=python_callable,
