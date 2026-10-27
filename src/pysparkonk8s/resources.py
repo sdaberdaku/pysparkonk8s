@@ -32,7 +32,7 @@ def _parse_size(text: str, units: dict[str, int], kind: str) -> int:
 
 
 @total_ordering
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class CPU:
     """CPU amount stored as whole millicores."""
 
@@ -44,11 +44,11 @@ class CPU:
 
     @classmethod
     def cores(cls, x: float) -> CPU:
-        return cls(round(x * 1000))
+        return cls(milli=round(x * 1000))
 
     @classmethod
     def milli_cores(cls, m: int) -> CPU:
-        return cls(m)
+        return cls(milli=m)
 
     @classmethod
     def from_k8s_spec(cls, quantity: str | int | float) -> CPU:
@@ -58,7 +58,7 @@ class CPU:
         if match is None:
             raise ValueError(f"{quantity!r} is not a valid Kubernetes CPU quantity")
         value = float(match["value"])
-        return cls(round(value if match["unit"] else value * 1000))
+        return cls(milli=round(value if match["unit"] else value * 1000))
 
     def to_k8s_spec(self) -> str:
         return str(self.milli // 1000) if self.milli % 1000 == 0 else f"{self.milli}m"
@@ -69,12 +69,12 @@ class CPU:
     def __add__(self, other: CPU) -> CPU:
         if not isinstance(other, CPU):
             return NotImplemented
-        return CPU(self.milli + other.milli)
+        return CPU(milli=self.milli + other.milli)
 
     def __mul__(self, factor: float) -> CPU:
         if not isinstance(factor, (int, float)):
             return NotImplemented
-        return CPU(round(self.milli * factor))
+        return CPU(milli=round(self.milli * factor))
 
     def __lt__(self, other: CPU) -> bool:
         if not isinstance(other, CPU):
@@ -86,7 +86,7 @@ class CPU:
 
 
 @total_ordering
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Memory:
     """Memory amount stored as whole bytes."""
 
@@ -98,30 +98,30 @@ class Memory:
 
     @classmethod
     def gibibytes(cls, x: float) -> Memory:
-        return cls(round(x * 2**30))
+        return cls(bytes=round(x * 2**30))
 
     @classmethod
     def mebibytes(cls, x: float) -> Memory:
-        return cls(round(x * 2**20))
+        return cls(bytes=round(x * 2**20))
 
     @classmethod
     def gigabytes(cls, x: float) -> Memory:
-        return cls(round(x * 10**9))
+        return cls(bytes=round(x * 10**9))
 
     @classmethod
     def megabytes(cls, x: float) -> Memory:
-        return cls(round(x * 10**6))
+        return cls(bytes=round(x * 10**6))
 
     @classmethod
     def from_k8s_spec(cls, quantity: str | int) -> Memory:
         if isinstance(quantity, int) and not isinstance(quantity, bool):
-            return cls(quantity)
-        return cls(_parse_size(quantity, _K8S_UNITS, "Kubernetes"))
+            return cls(bytes=quantity)
+        return cls(bytes=_parse_size(quantity, _K8S_UNITS, "Kubernetes"))
 
     @classmethod
     def from_spark_spec(cls, quantity: str) -> Memory:
         text = quantity.lower() if isinstance(quantity, str) else quantity
-        return cls(_parse_size(text, _SPARK_UNITS, "Spark"))
+        return cls(bytes=_parse_size(text, _SPARK_UNITS, "Spark"))
 
     def _mebibytes_up(self) -> int:
         return math.ceil(self.bytes / _MIB)
@@ -135,12 +135,12 @@ class Memory:
     def __add__(self, other: Memory) -> Memory:
         if not isinstance(other, Memory):
             return NotImplemented
-        return Memory(self.bytes + other.bytes)
+        return Memory(bytes=self.bytes + other.bytes)
 
     def __mul__(self, factor: float) -> Memory:
         if not isinstance(factor, (int, float)):
             return NotImplemented
-        return Memory(round(self.bytes * factor))
+        return Memory(bytes=round(self.bytes * factor))
 
     def __lt__(self, other: Memory) -> bool:
         if not isinstance(other, Memory):

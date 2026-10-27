@@ -46,7 +46,12 @@ def test_memory_rejects_garbage(bad):
 
 @pytest.mark.parametrize(
     "spec,expected",
-    [("4G", Memory.gibibytes(4)), ("512M", Memory.mebibytes(512)), ("4gb", Memory.gibibytes(4)), ("1b", Memory(1))],
+    [
+        ("4G", Memory.gibibytes(4)),
+        ("512M", Memory.mebibytes(512)),
+        ("4gb", Memory.gibibytes(4)),
+        ("1b", Memory(bytes=1)),
+    ],
 )
 def test_memory_from_spark_spec_is_case_and_suffix_tolerant(spec, expected):
     assert Memory.from_spark_spec(spec) == expected

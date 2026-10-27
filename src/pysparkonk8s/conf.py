@@ -36,7 +36,7 @@ FOLLOW_DRIVER = _Sentinel.FOLLOW_DRIVER
 class SparkBaseConf:
     """Cluster-level settings shared by the driver and its executors."""
 
-    master: str = "k8s://https://kubernetes.default.svc.cluster.local:443"
+    master: str = "k8s://https://kubernetes.default.svc:443"
     namespace: str | None = None
     image_pull_policy: str = "IfNotPresent"
     image_pull_secrets: str | None = None
@@ -44,16 +44,14 @@ class SparkBaseConf:
     block_manager_port: int = 7079
     delete_executors_on_termination: bool = True
     executor_pod_template_path: str = "/tmp/pysparkonk8s/executor-pod-template.yaml"
-    ca_cert_file: str = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-    oauth_token_file: str = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    ca_cert_file: str | None = None
+    oauth_token_file: str | None = None
 
     def render_spark_conf(self) -> dict[str, str]:
         """Return the Spark conf entries; driver identity values are resolved by Spark from env vars."""
         conf = {
             "spark.master": self.master,
             "spark.submit.deployMode": "client",
-            "spark.kubernetes.authenticate.submission.caCertFile": self.ca_cert_file,
-            "spark.kubernetes.authenticate.submission.oauthTokenFile": self.oauth_token_file,
             "spark.kubernetes.container.image.pullPolicy": self.image_pull_policy,
             "spark.kubernetes.executor.deleteOnTermination": str(self.delete_executors_on_termination).lower(),
             "spark.driver.port": str(self.driver_port),
@@ -63,6 +61,10 @@ class SparkBaseConf:
             "spark.kubernetes.namespace": self.namespace or f"${{env:{DRIVER_ENV_NAMESPACE}}}",
             "spark.kubernetes.executor.podTemplateFile": self.executor_pod_template_path,
         }
+        if self.ca_cert_file:
+            conf["spark.kubernetes.authenticate.caCertFile"] = self.ca_cert_file
+        if self.oauth_token_file:
+            conf["spark.kubernetes.authenticate.oauthTokenFile"] = self.oauth_token_file
         if self.image_pull_secrets:
             conf["spark.kubernetes.container.image.pullSecrets"] = self.image_pull_secrets
         return conf
@@ -226,6 +228,11 @@ class _K8sConf(ABC):
     def __post_init__(self) -> None:
         if not self.image:
             raise ValueError("image is required")
+        if self.cores is not None and self.cores.milli % 1000 != 0:
+            raise ValueError(
+                f"cores must be a whole number of cores, got {self.cores.to_spark_spec()}; "
+                "use request_cpu for a fractional pod CPU request"
+            )
 
     def effective_memory_overhead(self) -> Memory | None:
         if self.memory is None:
@@ -279,7 +286,7 @@ class _K8sConf(ABC):
         return self.affinity
 
     def _render_labels(self, run: RunIdentity | None) -> dict[str, str]:
-        return {COMPONENT_LABEL: self.component, **self.pod_labels}
+        return {**self.pod_labels, COMPONENT_LABEL: self.component}
 
     def _render_resources(self) -> k8s.V1ResourceRequirements:
         from kubernetes.client import models as k8s
@@ -334,6 +341,11 @@ class SparkDriverConf(_K8sConf):
     container_name: ClassVar[str] = "base"
     default_overhead_factor: ClassVar[float] = 0.4
 
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.affinity is FOLLOW_DRIVER:
+            raise ValueError("FOLLOW_DRIVER applies to executors only")
+
     def _render_env(self) -> list:
         from kubernetes.client import models as k8s
 
@@ -382,8 +394,9 @@ class SparkExecutorConf(_K8sConf):
         cpu, _, _ = self.effective_requests()
         if cpu is not None:
             conf["spark.kubernetes.executor.request.cores"] = cpu.to_spark_spec()
-        if self.limit_cpu is not None:
-            conf["spark.kubernetes.executor.limit.cores"] = self.limit_cpu.to_spark_spec()
+        limit_cpu, _, _ = self.effective_limits()
+        if limit_cpu is not None:
+            conf["spark.kubernetes.executor.limit.cores"] = limit_cpu.to_spark_spec()
         if self.pyspark_memory is not None:
             conf["spark.executor.pyspark.memory"] = self.pyspark_memory.to_spark_spec()
         conf["spark.dynamicAllocation.enabled"] = str(self.dynamic_allocation).lower()
@@ -406,7 +419,7 @@ class SparkExecutorConf(_K8sConf):
         return self.env
 
     def _render_labels(self, run: RunIdentity | None) -> dict[str, str]:
-        return {COMPONENT_LABEL: self.component, **run.labels(), **self.pod_labels}
+        return {**run.labels(), **self.pod_labels, COMPONENT_LABEL: self.component}
 
     def _render_affinity(self, run: RunIdentity | None) -> Any:
         if self.affinity is FOLLOW_DRIVER:

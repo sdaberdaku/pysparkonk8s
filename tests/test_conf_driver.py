@@ -1,6 +1,6 @@
 import pytest
 
-from pysparkonk8s.conf import COMPONENT_LABEL, SparkDriverConf
+from pysparkonk8s.conf import COMPONENT_LABEL, FOLLOW_DRIVER, SparkDriverConf
 from pysparkonk8s.resources import CPU, Memory
 
 IMG = "example.com/airflow-spark:1"
@@ -73,3 +73,13 @@ def test_none_fields_are_omitted():
     assert d.render_spark_conf() == {}
     res = d.render_pod_specification().spec.containers[0].resources
     assert res.requests is None and res.limits is None
+
+
+def test_driver_component_label_cannot_be_overridden():
+    d = SparkDriverConf(image=IMG, pod_labels={"pysparkonk8s/component": "x"})
+    assert d.render_pod_specification().metadata.labels["pysparkonk8s/component"] == "driver"
+
+
+def test_driver_rejects_follow_driver():
+    with pytest.raises(ValueError, match="FOLLOW_DRIVER"):
+        SparkDriverConf(image=IMG, affinity=FOLLOW_DRIVER)

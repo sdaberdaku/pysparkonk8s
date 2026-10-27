@@ -13,6 +13,10 @@ from pysparkonk8s.operators import PySparkOnK8sOperator, check_pod_override
 
 class _PySparkOnK8sDecoratedOperator(DecoratedOperator, PySparkOnK8sOperator):
     custom_operator_name = "@task.pyspark_on_k8s"
+    # DecoratedOperator comes first in the MRO and lists only op_args/op_kwargs.
+    template_fields: Sequence[str] = tuple(
+        dict.fromkeys((*DecoratedOperator.template_fields, *PySparkOnK8sOperator.template_fields))
+    )
 
     def __init__(
         self,

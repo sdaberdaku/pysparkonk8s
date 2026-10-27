@@ -57,3 +57,22 @@ def test_decorator_rejects_user_pod_override(task):
             executor_conf=SparkExecutorConf(image="e"),
             executor_config={"pod_override": k8s.V1Pod()},
         )
+
+
+def test_decorator_renders_jinja_in_the_spark_conf(task):
+    from airflow.providers.common.compat.sdk import DAG
+
+    @task.pyspark_on_k8s(
+        driver_conf=SparkDriverConf(image="d"),
+        executor_conf=SparkExecutorConf(image="e"),
+        extra={"spark.x": "{{ run_id }}"},
+    )
+    def job(spark):
+        return spark
+
+    with DAG("j", start_date=pendulum.datetime(2025, 1, 1)):
+        op = job.override(task_id="j")().operator
+    assert "config_kwargs" in op.template_fields
+    assert "op_args" in op.template_fields
+    op.render_template_fields({"run_id": "manual__1"})
+    assert op.config_kwargs["spark.x"] == "manual__1"

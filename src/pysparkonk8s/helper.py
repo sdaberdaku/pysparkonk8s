@@ -18,6 +18,10 @@ class _PrepareDriver:
     executor_conf: SparkExecutorConf
 
     def __call__(self, context: Any) -> None:
+        # The stock @task.pyspark does not list config_kwargs as a template field, so render it here.
+        # Airflow renders template fields before pre_execute, and rendering a rendered string again is a no-op.
+        task = context["task"]
+        task.config_kwargs = task.render_template(task.config_kwargs, context)
         prepare_driver(self.base_conf, self.executor_conf, context)
 
 

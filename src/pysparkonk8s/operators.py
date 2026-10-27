@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from airflow.providers.cncf.kubernetes.pod_generator import PodGenerator
+
 from airflow.providers.apache.spark.operators.spark_pyspark import PySparkOperator
 
 from pysparkonk8s.conf import (
@@ -15,6 +17,7 @@ from pysparkonk8s.conf import (
     SparkExecutorConf,
     build_spark_conf,
 )
+from pysparkonk8s.errors import PySparkOnK8sError
 from pysparkonk8s.template import prepare_driver
 
 
@@ -51,6 +54,8 @@ class PySparkOnK8sOperator(PySparkOperator):
         # The decorator pre-fills a pod_override it rendered (mapped tasks need it before the operator exists).
         # It carries our component label and is replaced by a fresh render; any other pod_override is the user's.
         check_pod_override(executor_config)
+        # Kept to detect a mapped task whose pod was rendered from a different driver_conf (see execute()).
+        self._launched_pod_override = executor_config.get("pod_override")
         pod_override = driver_conf.render_pod_specification()
         if "conn_id" in kwargs:
             raise ValueError("conn_id is not supported: the driver runs in the cluster")
@@ -69,5 +74,14 @@ class PySparkOnK8sOperator(PySparkOperator):
         )
 
     def execute(self, context: Any) -> Any:
+        launched = self._launched_pod_override
+        if launched is not None and context["ti"].map_index >= 0:
+            fresh = self.driver_conf.render_pod_specification()
+            if PodGenerator.serialize_pod(launched) != PodGenerator.serialize_pod(fresh):
+                raise PySparkOnK8sError(
+                    "The driver pod was rendered from a different driver_conf than this task uses. "
+                    "For mapped tasks, pass driver_conf to @task.pyspark_on_k8s(...) itself; "
+                    ".override(driver_conf=...) cannot change the pod of a mapped task."
+                )
         prepare_driver(self.base_conf, self.executor_conf, context)
         return super().execute(context)

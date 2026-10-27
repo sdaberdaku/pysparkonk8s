@@ -121,3 +121,22 @@ def test_driver_accepts_zone_rule_but_not_per_run_rule():
         .render_pod_specification()
         .spec.affinity.pod_anti_affinity
     )
+
+
+def test_executor_limit_cores_renders_the_clamped_value():
+    conf = SparkExecutorConf(image=IMG, cores=CPU.cores(2), limit_cpu=CPU.cores(1)).render_spark_conf()
+    assert conf["spark.kubernetes.executor.limit.cores"] == "2"
+
+
+def test_fractional_cores_are_rejected_with_a_pointer_to_request_cpu():
+    with pytest.raises(ValueError, match="request_cpu"):
+        SparkExecutorConf(image=IMG, cores=CPU.milli_cores(250))
+    SparkExecutorConf(image=IMG, cores=CPU.cores(1), request_cpu=CPU.milli_cores(250))
+    SparkExecutorConf(image=IMG, cores=None)
+
+
+def test_component_label_cannot_be_overridden():
+    pod = SparkExecutorConf(image=IMG, pod_labels={"pysparkonk8s/component": "x"}).render_pod_specification(
+        RunIdentity("d", "t", "r")
+    )
+    assert pod.metadata.labels["pysparkonk8s/component"] == "executor"
