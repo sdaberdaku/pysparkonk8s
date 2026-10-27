@@ -37,17 +37,15 @@ does that already). This project is the escape hatch for the task that needs iso
    - driver `ghcr.io/sdaberdaku/pysparkonk8s/driver:<provider>-airflow<airflow>-python<python>` (plus `<provider>`
      and `latest` for the default row): the stock Airflow image with a JRE, pyspark and this package. Rows in
      1.0.0: Airflow 3.3.2 on Python 3.10, 3.12 and 3.14.
-   - executor `ghcr.io/sdaberdaku/pysparkonk8s/executor:spark<spark>-python<python>`: the stock
-     `spark:<spark>-scala2.13-java21-ubuntu` image (no Python) plus a uv-managed Python of that version in
-     `/opt/python`, a venv in `/opt/venv` with pandas and pyarrow, and `PYSPARK_PYTHON` pointing at it. Rows in
-     1.0.0: Spark 4.2.0 on Python 3.12 and 3.14. Python 3.10 users take the stock `spark:4.2.0-python3`.
-   Verified before the build: Spark 4.2.0 with uv Python 3.14.7 runs DataFrame, Arrow and Python-worker code.
+   Executor images are not built here: the docs point at `ghcr.io/sdaberdaku/spark:<spark>-python<python>` from
+   the separate `sdaberdaku/spark-images` project (stock Spark plus a uv-managed Python, pandas and pyarrow) for
+   Python 3.11+, and at the stock `spark:4.2.0-python3` for Python 3.10.
 
 ## Non-goals
 
 - Local and Spark Connect modes: the stock `@task.pyspark` covers them (`conn_id`, `local[*]`).
 - Cluster deploy mode (`spark-submit`-style driver pod): that is the `SparkKubernetesOperator` / Spark Operator job.
-- Executor images with extra jars (Iceberg, Delta, cloud SDKs): users extend the published executor image.
+- Executor images: provided by `sdaberdaku/spark-images`; users add their jars on top.
 - Any catalog, S3, Iceberg, Delta or cloud-provider tuning. Users pass those through `extra`.
 - Sizing presets. Users size explicitly.
 - Overriding the stock `@task.pyspark` name. ProvidersManager keeps the first decorator registered under a name
@@ -66,7 +64,7 @@ does that already). This project is the escape hatch for the task that needs iso
 - Python 3.10 to 3.14. Airflow 2.11 runs on 3.10 to 3.12, Airflow 3.3 on 3.10 to 3.14; Airflow excludes 3.15,
   and Airflow 3.4 (beta) and the providers released since October 2026 require 3.11+, so 3.10 support ends with
   Airflow 3.3. PySpark requires the same Python minor on driver and executors; the stock `spark:4.2.0-python3`
-  images ship Python 3.10, which is why the project publishes executor images for 3.12 and 3.14 (documented).
+  images ship Python 3.10; for newer Pythons the docs point at `ghcr.io/sdaberdaku/spark` (documented).
 - Dependencies: `apache-airflow>=2.11`, `apache-airflow-providers-apache-spark>=6.3`,
   `apache-airflow-providers-cncf-kubernetes>=10`, `pyspark>=4.0`, `pyyaml`. No pins tighter than lower bounds.
 - Own namespace `pysparkonk8s` (Airflow asks third-party providers to stay out of `airflow.providers.*`).
@@ -234,8 +232,8 @@ task; helper returns the right keys; decorator is registered and resolvable thro
 operator sets `executor_config`. Matrix: Airflow 2.11 on Python 3.10 and 3.12; Airflow 3.3 on 3.10, 3.12 and 3.14.
 
 End to end (kind, Airflow 3 only; 2.11 is covered by the unit matrix), two rows: Python 3.10 driver with the
-stock `spark:4.2.0-python3` executor, and Python 3.14 driver with the project's executor image. Each row builds
-the images, installs Airflow with the official Helm chart and KubernetesExecutor, mount the example DAGs, trigger a
+stock `spark:4.2.0-python3` executor, and Python 3.14 driver with `ghcr.io/sdaberdaku/spark:4.2.0-python3.14`.
+Each row builds the driver image, installs Airflow with the official Helm chart and KubernetesExecutor, mount the example DAGs, trigger a
 DAG that runs one task through each entry point plus one mapped task, assert they succeed, assert executor pods
 appeared and are gone afterwards. Spark 4.x only.
 
@@ -243,9 +241,9 @@ appeared and are gone afterwards. Spark 4.x only.
 
 - `ci.yml`: on pull requests (skipped for drafts) and on push to `main`: ruff, unit matrix, e2e, final `ci-ok` job.
 - `release.yml`: on tag `v*`: build sdist and wheel, publish to PyPI with trusted publishing (OIDC, no token),
-  push the OCI chart, build and push the driver and executor images (amd64 and arm64, the driver from the wheel
-  built in the same run), `gh release create` with generated notes. First push creates private GHCR packages;
-  they are set to public once, after the first release.
+  push the OCI chart, build and push the driver images (amd64 and arm64, from the wheel built in the same run),
+  `gh release create` with generated notes. First push creates private GHCR packages; they are set to public
+  once, after the first release.
 - `pages.yml`: mkdocs build and deploy on push to `main` touching `docs/**` or `mkdocs.yml`.
 - Protection on `main`: pull request required, `ci-ok` required, linear history, force push only by the owner.
 - Version 1.0.0 first release.
@@ -265,6 +263,5 @@ troubleshooting), limitations, development, release, changelog.
 - Exact names of minor fields and the `CPU` / `Memory` API surface (parsers, arithmetic, `to_spark()` /
   `to_k8s()`), keeping the 2024 repo's shape where it fits.
 - How the e2e job gets images into kind and how it polls the DAG run.
-- The Dockerfile build arguments (`AIRFLOW_VERSION`, `PYTHON_VERSION`, `PYSPARK_VERSION`, `SPARK_VERSION`,
-  `UV_VERSION`) and the image matrix file.
+- The Dockerfile build arguments (`AIRFLOW_VERSION`, `PYTHON_VERSION`, `PYSPARK_VERSION`) and the image matrix file.
 - mkdocs theme details.
