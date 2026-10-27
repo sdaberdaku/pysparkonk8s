@@ -32,12 +32,17 @@ does that already). This project is the escape hatch for the task that needs iso
    render both the Spark conf and the Kubernetes pod spec of their component.
 5. Per-run follow-driver executor placement that is correct for concurrent runs and mapped tasks.
 6. Published on PyPI by a tag-triggered workflow, documented with mkdocs-material on GitHub Pages.
+7. A ready driver image on GHCR, `ghcr.io/sdaberdaku/pysparkonk8s/driver:<provider>-airflow<airflow>-python<python>`
+   (plus `<provider>` and `latest`): the stock Airflow image with a JRE, pyspark and this package. One combination
+   in 1.0.0, Airflow 3.3.2 on Python 3.10, because it pairs with the stock `spark:4.2.0-python3` executor image.
+   Built on every pull request (used by the e2e test, not pushed) and pushed for amd64 and arm64 on release.
 
 ## Non-goals
 
 - Local and Spark Connect modes: the stock `@task.pyspark` covers them (`conn_id`, `local[*]`).
 - Cluster deploy mode (`spark-submit`-style driver pod): that is the `SparkKubernetesOperator` / Spark Operator job.
-- Building or publishing driver and executor images beyond the example Dockerfile used by the e2e test.
+- Executor images: the stock `spark:4.x-python3` images are used as they are. A Python 3.11+ executor image is a
+  possible follow-up, together with a matching driver tag.
 - Any catalog, S3, Iceberg, Delta or cloud-provider tuning. Users pass those through `extra`.
 - Sizing presets. Users size explicitly.
 - Overriding the stock `@task.pyspark` name. ProvidersManager keeps the first decorator registered under a name
@@ -61,9 +66,9 @@ does that already). This project is the escape hatch for the task that needs iso
   `apache-airflow-providers-cncf-kubernetes>=10`, `pyspark>=4.0`, `pyyaml`. No pins tighter than lower bounds.
 - Own namespace `pysparkonk8s` (Airflow asks third-party providers to stay out of `airflow.providers.*`).
 - Tooling: `uv`, `hatchling`, `ruff` (lint + format), `pytest`. `src/` layout.
-- The driver image is the Airflow worker image plus a JRE (17 or 21), full `pyspark`, and the jars the job needs.
-  The executor image is a stock `spark:4.x` image (or a derived one). Both are supplied by the user; the config
-  objects have no default image and fail fast if none is set.
+- The driver image is the Airflow worker image plus a JRE (17 or 21), full `pyspark`, and the jars the job needs;
+  the published GHCR image is one such image. The executor image is a stock `spark:4.x` image (or a derived one).
+  The config objects have no default image and fail fast if none is set; the docs recommend the GHCR image.
 - License Apache 2.0.
 
 ## Design
@@ -233,7 +238,9 @@ appeared and are gone afterwards. Spark 4.x only.
 
 - `ci.yml`: on pull requests (skipped for drafts) and on push to `main`: ruff, unit matrix, e2e, final `ci-ok` job.
 - `release.yml`: on tag `v*`: build sdist and wheel, publish to PyPI with trusted publishing (OIDC, no token),
-  push the OCI chart, `gh release create` with generated notes.
+  push the OCI chart, build and push the driver image (amd64 and arm64, from the wheel built in the same run),
+  `gh release create` with generated notes. First push creates a private GHCR package; the owner flips it to
+  public once.
 - `pages.yml`: mkdocs build and deploy on push to `main` touching `docs/**` or `mkdocs.yml`.
 - Protection on `main`: pull request required, `ci-ok` required, linear history, force push only by the owner.
 - Version 1.0.0 first release.
@@ -253,4 +260,5 @@ troubleshooting), limitations, development, release, changelog.
 - Exact names of minor fields and the `CPU` / `Memory` API surface (parsers, arithmetic, `to_spark()` /
   `to_k8s()`), keeping the 2024 repo's shape where it fits.
 - How the e2e job gets images into kind and how it polls the DAG run.
+- The Dockerfile build arguments (`AIRFLOW_VERSION`, `PYTHON_VERSION`, `PYSPARK_VERSION`) and the image matrix file.
 - mkdocs theme details.
