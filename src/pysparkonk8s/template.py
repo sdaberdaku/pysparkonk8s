@@ -36,8 +36,7 @@ def write_executor_pod_template(executor: SparkExecutorConf, run: RunIdentity, p
     from airflow.providers.cncf.kubernetes.pod_generator import PodGenerator
 
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    # serialize_pod leaves out apiVersion and kind when the V1Pod does not set them
-    doc = {"apiVersion": "v1", "kind": "Pod", **PodGenerator.serialize_pod(executor.render_pod_specification(run))}
+    doc = PodGenerator.serialize_pod(executor.render_pod_specification(run))
     with open(path, "w") as f:
         yaml.safe_dump(doc, f, default_flow_style=False)
     return path

@@ -301,6 +301,8 @@ class _K8sConf(ABC):
         from kubernetes.client import models as k8s
 
         return k8s.V1Pod(
+            api_version="v1",
+            kind="Pod",
             metadata=k8s.V1ObjectMeta(
                 labels=self._render_labels(run),
                 annotations=self.pod_annotations or None,
