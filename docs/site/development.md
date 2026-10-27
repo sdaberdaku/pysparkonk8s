@@ -52,4 +52,4 @@ PYTHON_VERSION=3.12 EXECUTOR_IMAGE=ghcr.io/sdaberdaku/spark:4.2.0-python3.12 bas
 
 Draft pull requests skip all jobs, so `ci-ok` stays red until the PR is ready for review.
 
-Dependencies are kept current by Renovate.
+Renovate opens the dependency update pull requests, on Mondays before 6am. Python packages, the driver image inputs in `docker/images.json`, the Airflow Helm chart and executor images in the e2e test, and GitHub Actions are all tracked. Patch and action updates merge on their own once CI passes; Airflow minor updates, PySpark minor updates and Spark executor patch updates wait for review, and Airflow major updates are never proposed. The Mend Renovate app must be installed on the repository for the configuration to act.
